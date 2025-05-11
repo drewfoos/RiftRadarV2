@@ -67,7 +67,6 @@ export function UserProfilePageClient({
   console.log(`[${COMPONENT_NAME_PROFILE_CLIENT}] Initializing with props:`, { region, gameName, tagLine, currentPatchVersion, ddragonDataLoaded: !!initialDDragonData });
 
   const trpcClient = useTRPC();
-  const queryClient = useQueryClient();
   const router = useRouter();
 
   const [selectedQueueFilterKey, setSelectedQueueFilterKey] = useState<QueueFilterKey>('ALL');
