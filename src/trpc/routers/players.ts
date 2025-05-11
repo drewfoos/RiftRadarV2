@@ -1,21 +1,32 @@
+// src/trpc/routers/players.ts (or your playerRouter file)
 import { playerCache, riotIdCache } from '@/lib/db/schema';
-import { z } from 'zod';
-import { publicProcedure, router } from '../init';
-// Import necessary Drizzle functions
+import type {
+  ChampionMasteryDTO, // Assuming you have this for gameModeMap
+  DDragonArenaAugment // If you plan to fetch this too
+  ,
+  DDragonChampion,
+  // Import DDragon types needed for the bundle
+  DDragonDataBundle,
+  DDragonItem,
+  DDragonRuneTree,
+  DDragonSummonerSpell,
+  LeagueEntryDTO,
+  RiotSummonerDTO
+} from '@/types/ddragon';
 import { TRPCError } from '@trpc/server';
 import 'dotenv/config';
 import { and, desc, eq, sql } from 'drizzle-orm';
-// Import types needed from the central types file
-import type { ChampionMasteryDTO, LeagueEntryDTO, RiotSummonerDTO } from '@/types/ddragon';
+import fetch from 'node-fetch'; // Or your server-side HTTP client
+import { z } from 'zod';
+import { publicProcedure, router } from '../init';
 
-// Cache durations
-const CACHE_DURATION_RIOT_ID_DB_MILLISECONDS = 7 * 24 * 60 * 60 * 1000; // 7 days
-const CACHE_DURATION_SUMMONER_REDIS_SECONDS = 5 * 60; // 5 minutes
-const CACHE_DURATION_SUMMONER_DB_MILLISECONDS = 30 * 60 * 1000; // 30 minutes
-const CACHE_DURATION_RANKED_ENTRIES_REDIS_SECONDS = 10 * 60; // 10 minutes for ranked data
+// Cache durations (copying from your provided snippet)
+const CACHE_DURATION_RIOT_ID_DB_MILLISECONDS = 7 * 24 * 60 * 60 * 1000;
+const CACHE_DURATION_SUMMONER_REDIS_SECONDS = 5 * 60;
+const CACHE_DURATION_SUMMONER_DB_MILLISECONDS = 30 * 60 * 1000;
+const CACHE_DURATION_RANKED_ENTRIES_REDIS_SECONDS = 10 * 60;
 const CACHE_DURATION_MASTERY_REDIS_SECONDS = 30 * 60;
 
-// Define the return type for getProfileByRiotId
 type ProfileData = RiotSummonerDTO & { 
   fetchedFrom: string; 
 };
@@ -26,6 +37,57 @@ interface RiotIdSuggestion {
     puuid: string;
     profileIconId: number | null; 
 }
+
+// --- DDragon Data Fetching Logic (Integrated into this router) ---
+const DDRAGON_BASE_URL = "https://ddragon.leagueoflegends.com";
+
+async function getLatestPatchVersion(): Promise<string> {
+  try {
+    const response = await fetch(`${DDRAGON_BASE_URL}/api/versions.json`);
+    if (!response.ok) {
+        console.error(`Failed to fetch versions: ${response.statusText}`, await response.text());
+        throw new Error(`Failed to fetch versions: ${response.statusText}`);
+    }
+    const versions = await response.json() as string[];
+    if (versions.length === 0) {
+        throw new Error("No versions returned from DDragon API.");
+    }
+    return versions[0];
+  } catch (error) {
+    console.error("Error fetching latest patch version:", error);
+    throw new Error("Could not retrieve latest patch version from Data Dragon.");
+  }
+}
+
+async function fetchDDragonJson<T>(patchVersion: string, fileName: string, subKey?: string): Promise<T | null> {
+  try {
+    const url = `${DDRAGON_BASE_URL}/cdn/${patchVersion}/data/en_US/${fileName}.json`;
+    const response = await fetch(url);
+    if (!response.ok) {
+      console.warn(`Failed to fetch ${fileName}.json for patch ${patchVersion}: ${response.statusText}`);
+      return null;
+    }
+    const jsonData = await response.json() as any;
+    return subKey ? jsonData[subKey] as T : jsonData as T;
+  } catch (error) {
+    console.error(`Error fetching DDragon JSON ${fileName}.json:`, error);
+    return null;
+  }
+}
+
+async function getGameModeMap(): Promise<Record<number, string> | null> {
+    return {
+        400: "Normal Draft",
+        420: "Ranked Solo/Duo",
+        430: "Normal Blind",
+        440: "Ranked Flex",
+        450: "ARAM",
+        700: "Clash",
+        1700: "Arena",
+    };
+}
+// --- End DDragon Data Fetching Logic ---
+
 
 export const playerRouter = router({
   getProfileByRiotId: publicProcedure
@@ -44,9 +106,9 @@ export const playerRouter = router({
         let puuid: string | undefined;
         let needsVerification = false; 
         let currentName = gameName; 
-        let currentTag = tagLine;  
+        let currentTag = tagLine;   
 
-        // --- Step 1: Check riotIdCache ---
+        // --- Step 1: Check riotIdCache --- 
         try {
           const riotIdRecord = await db.select({
               puuid: riotIdCache.puuid,
@@ -120,10 +182,10 @@ export const playerRouter = router({
                 if ((verifiedName !== gameName || verifiedTag !== tagLine)) {
                     console.log(`[CACHE UPDATE] Riot ID changed for PUUID ${puuid}. Old: ${gameName}#${tagLine}, Current: ${verifiedName}#${verifiedTag}. Removing old entry if it exists for this PUUID.`);
                     await db.delete(riotIdCache).where(and(
-                        eq(riotIdCache.gameName, gameName), 
-                        eq(riotIdCache.tagLine, tagLine),  
-                        eq(riotIdCache.platformId, normalizedPlatformId),
-                        eq(riotIdCache.puuid, puuid) 
+                      eq(riotIdCache.gameName, gameName), 
+                      eq(riotIdCache.tagLine, tagLine),  
+                      eq(riotIdCache.platformId, normalizedPlatformId),
+                      eq(riotIdCache.puuid, puuid) 
                     )).catch((dbErr: any) => console.error(`DB DELETE error for old riotIdCache (${gameName}#${tagLine}):`, dbErr.message));
                 }
             } else {
@@ -173,7 +235,7 @@ export const playerRouter = router({
               console.log(`[CACHE HIT - Summoner Profile in DB] PUUID: ${puuid}`);
               if (redis && playerDataFromDb) { 
                 redis.set(summonerRedisKey, JSON.stringify(playerDataFromDb), { ex: CACHE_DURATION_SUMMONER_REDIS_SECONDS })
-                     .catch((setErr: any) => console.error(`Redis SET error (DB hit) for ${summonerRedisKey}:`, setErr.message)); 
+                       .catch((setErr: any) => console.error(`Redis SET error (DB hit) for ${summonerRedisKey}:`, setErr.message)); 
               }
               return { ...playerDataFromDb, puuid: record.puuid }; 
             } else {
@@ -232,7 +294,7 @@ export const playerRouter = router({
 
           if (redis) { 
             await redis.set(summonerRedisKey, JSON.stringify(dataToCache), { ex: CACHE_DURATION_SUMMONER_REDIS_SECONDS })
-                       .catch((redisErr: any) => console.error(`Redis SET error (API fetch) for ${summonerRedisKey}:`, redisErr.message)); 
+                           .catch((redisErr: any) => console.error(`Redis SET error (API fetch) for ${summonerRedisKey}:`, redisErr.message)); 
           }
           return dataToCache;
         } catch (error: any) {
@@ -272,7 +334,7 @@ export const playerRouter = router({
           const freshRankedData = await riotApi.getLeagueEntriesBySummonerId(summonerId, normalizedPlatformId);
           if (redis) { 
             await redis.set(redisKey, JSON.stringify(freshRankedData), { ex: CACHE_DURATION_RANKED_ENTRIES_REDIS_SECONDS })
-                       .catch((redisErr: any) => console.error(`Redis SET error (API fetch) for ${redisKey}:`, redisErr.message)); 
+                           .catch((redisErr: any) => console.error(`Redis SET error (API fetch) for ${redisKey}:`, redisErr.message)); 
           }
           return freshRankedData;
         } catch (error: any) {
@@ -282,14 +344,13 @@ export const playerRouter = router({
         }
     }),
 
-  // New procedure to get ranked entries for multiple summoners
   getBulkRankedEntries: publicProcedure
     .input(
       z.object({
         summonerInputs: z.array(
           z.object({
             summonerId: z.string().min(1),
-            platformId: z.string().min(2), // Platform ID for each summoner, in case they could be different
+            platformId: z.string().min(2), 
           })
         ).min(1, "At least one summoner input is required."),
       })
@@ -299,7 +360,6 @@ export const playerRouter = router({
       const { redis, riotApi } = ctx;
       const results: Record<string, LeagueEntryDTO[] | null> = {};
 
-      // Process all summoner inputs concurrently
       await Promise.allSettled(summonerInputs.map(async ({ summonerId, platformId }) => {
         const normalizedPlatformId = platformId.toLowerCase();
         const redisKey = `player:ranked:${normalizedPlatformId}:${summonerId}`;
@@ -311,28 +371,25 @@ export const playerRouter = router({
             if (cachedValue) {
               if (typeof cachedValue === 'string') {
                 summonerRankedData = JSON.parse(cachedValue) as LeagueEntryDTO[];
-              } else { // Assuming it's already an object
+              } else { 
                 summonerRankedData = cachedValue as LeagueEntryDTO[];
               }
-              // console.log(`[CACHE HIT - Redis Bulk] Ranked for ${summonerId}`);
             }
           } catch (err: any) {
             console.error(`Redis GET/PARSE error in bulk for ${redisKey}:`, err.message);
           }
         }
 
-        if (!summonerRankedData) { // If not found in cache, fetch from API
+        if (!summonerRankedData) { 
           try {
-            // console.log(`[API CALL - Bulk Ranked] Fetching for ${summonerId} on ${normalizedPlatformId}`);
             summonerRankedData = await riotApi.getLeagueEntriesBySummonerId(summonerId, normalizedPlatformId);
             if (redis && summonerRankedData) { 
-              // Ensure data is stringified before setting in Redis
               await redis.set(redisKey, JSON.stringify(summonerRankedData), { ex: CACHE_DURATION_RANKED_ENTRIES_REDIS_SECONDS })
                 .catch((redisErr: any) => console.error(`Redis SET error (API fetch bulk) for ${redisKey}:`, redisErr.message));
             }
           } catch (error: any) {
             console.error(`Error fetching Ranked Entries in bulk for SummonerID ${summonerId}:`, error.message);
-            summonerRankedData = null; // Set to null on error for this specific summoner
+            summonerRankedData = null; 
           }
         }
         results[summonerId] = summonerRankedData;
@@ -364,7 +421,7 @@ export const playerRouter = router({
         const freshMasteryData = await riotApi.getChampionMasteryByPuuid(puuid, normalizedPlatformId);
         if (redis) { 
             await redis.set(redisKey, JSON.stringify(freshMasteryData), { ex: CACHE_DURATION_MASTERY_REDIS_SECONDS })
-                       .catch((redisErr: any) => console.error(`Redis SET error (API fetch) for ${redisKey}:`, redisErr.message)); 
+                           .catch((redisErr: any) => console.error(`Redis SET error (API fetch) for ${redisKey}:`, redisErr.message)); 
         }
         return freshMasteryData;
       } catch (error: any) {
@@ -417,6 +474,57 @@ export const playerRouter = router({
       } catch (error: any) {
         console.error(`DB SEARCH error for riotIdCache query "${query}":`, error.message);
         return [];
+      }
+    }),
+
+  // --- NEW: Procedure to get DDragon Data Bundle ---
+  getDDragonBundle: publicProcedure
+    .output(z.object({
+        version: z.string(),
+        summonerSpellData: z.record(z.custom<DDragonSummonerSpell>()).nullable(),
+        runeTreeData: z.array(z.custom<DDragonRuneTree>()).nullable(),
+        championData: z.record(z.custom<DDragonChampion>()).nullable(),
+        itemData: z.record(z.custom<DDragonItem>()).nullable().optional(),
+        gameModeMap: z.record(z.string()).nullable(),
+        arenaAugmentData: z.record(z.custom<DDragonArenaAugment>()).nullable().optional(),
+    }))
+    .query(async () => { // No input needed, it always fetches the latest
+      try {
+        const version = await getLatestPatchVersion();
+
+        const [
+          championData,
+          itemData,
+          summonerSpellData,
+          runeTreeData,
+          gameModeMap,
+          // arenaAugmentData, // Implement fetching if needed
+        ] = await Promise.all([
+          fetchDDragonJson<Record<string, DDragonChampion>>(version, 'champion', 'data'),
+          fetchDDragonJson<Record<string, DDragonItem>>(version, 'item', 'data'),
+          fetchDDragonJson<Record<string, DDragonSummonerSpell>>(version, 'summoner', 'data'),
+          fetchDDragonJson<DDragonRuneTree[]>(version, 'runesReforged'),
+          getGameModeMap(),
+          // fetchDDragonJson<Record<number, DDragonArenaAugment>>(version, 'arena'), // Example
+        ]);
+        
+        const bundle: DDragonDataBundle & { version: string } = {
+          version,
+          championData,
+          itemData,
+          summonerSpellData,
+          runeTreeData,
+          gameModeMap,
+          arenaAugmentData: null, // Placeholder, adjust if you fetch this
+        };
+        return bundle;
+
+      } catch (error: any) {
+        console.error("Error in getDDragonBundle tRPC procedure:", error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: error.message || 'Failed to fetch Data Dragon bundle.',
+        });
       }
     }),
 });

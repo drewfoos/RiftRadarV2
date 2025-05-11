@@ -54,7 +54,7 @@ const LiveCircleIcon = () => (
 const profileTabsDefinition = [
     { id: "overview", label: "Overview", icon: <LayoutDashboard className="h-4 w-4 mr-1.5" />, isLink: true, hrefSlug: "" }, 
     { id: "live", label: "Live", icon: <LiveCircleIcon />, isLink: true, hrefSlug: "live" },
-    { id: "champions", label: "Champions", icon: <Users className="h-4 w-4 mr-1.5" />, isLink: true, hrefSlug: "champions" },
+    { id: "mastery", label: "Mastery", icon: <Users className="h-4 w-4 mr-1.5" />, isLink: true, hrefSlug: "mastery" },
 ];
 
 
