@@ -75,7 +75,13 @@ async function fetchCommunityDragonArenaAugments(patchVersionForCDragon: string)
 // Fetches all necessary static data (DDragon versions, spells, runes, champs, queues, augments)
 async function getAllDDragonData(): Promise<{ latestPatchVersion: string; ddragonData: DDragonDataBundle }> {
   let latestPatchVersion = "14.10.1"; // Sensible fallback patch
-  const ddragonData: DDragonDataBundle = { summonerSpellData: null, runeTreeData: null, championData: null, gameModeMap: null, arenaAugmentData: null };
+  const ddragonData: DDragonDataBundle = { 
+    summonerSpellData: null, 
+    runeTreeData: null, 
+    championData: null, 
+    gameModeMap: null, 
+    arenaAugmentData: null 
+  };
 
   // Fetch latest patch version
   try {
@@ -88,68 +94,87 @@ async function getAllDDragonData(): Promise<{ latestPatchVersion: string; ddrago
 
   console.log(`ProfilePage Server: Using DDragon Patch for Riot Assets: ${latestPatchVersion}`);
 
-  // Determine Community Dragon patch version (usually major.minor or 'latest')
   let cdragonPatchForArena = "latest";
   const patchParts = latestPatchVersion.split('.');
   if (patchParts.length >= 2) { cdragonPatchForArena = `${patchParts[0]}.${patchParts[1]}`; }
   else if (latestPatchVersion !== "latest") { console.warn(`DDragon patch format "${latestPatchVersion}" not ideal for CDragon, using "${cdragonPatchForArena}" for Arena Augments.`); }
 
-  // Fetch all static data in parallel
   const [summonerJson, runesReforgedJson, championJson, queuesJson, processedArenaAugments] = await Promise.all([
     fetchDDragonJson('summoner', latestPatchVersion),
     fetchDDragonJson('runesReforged', latestPatchVersion),
     fetchDDragonJson('champion', latestPatchVersion),
-    fetch('https://static.developer.riotgames.com/docs/lol/queues.json', { next: { revalidate: 60 * 60 * 24 * 7 } }).then(res => res.ok ? res.json() : null).catch(() => null), // Cache queues for 7 days
+    fetch('https://static.developer.riotgames.com/docs/lol/queues.json', { next: { revalidate: 60 * 60 * 24 * 7 } }).then(res => res.ok ? res.json() : null).catch(() => null),
     fetchCommunityDragonArenaAugments(cdragonPatchForArena)
   ]);
 
-  // Populate the ddragonData bundle
   if (summonerJson?.data) ddragonData.summonerSpellData = summonerJson.data;
   if (runesReforgedJson && Array.isArray(runesReforgedJson)) ddragonData.runeTreeData = runesReforgedJson;
   if (championJson?.data) ddragonData.championData = championJson.data;
+  
+  // --- Updated Game Mode Map Logic ---
   if (queuesJson && Array.isArray(queuesJson)) {
-    // Process queue data into a map of queueId to cleaned description/map name
+    const preferredGameModeNames: Record<number, string> = {
+        400: "Draft", // Changed from "Normal Draft" to "Draft"
+        420: "Solo", 
+        430: "Blind",
+        440: "Flex",
+        450: "ARAM",
+        700: "Clash",
+        1700: "Arena",
+        1900: "URF"
+        // Add other specific overrides if needed
+    };
     ddragonData.gameModeMap = queuesJson.reduce((acc: Record<number, string>, queue: DDragonQueue) => {
-      acc[queue.queueId] = queue.description?.replace(/ Games$| 5v5$| Summoner's Rift$| Twisted Treeline$| Howling Abyss$/i, '') || queue.map;
+      if (preferredGameModeNames[queue.queueId]) {
+        acc[queue.queueId] = preferredGameModeNames[queue.queueId];
+      } else if (queue.description) {
+        // Fallback: Clean up the description from queues.json
+        acc[queue.queueId] = queue.description
+          .replace(/ Games$/i, '')
+          .replace(/ 5v5$/i, '')
+          .replace(/ Summoner's Rift$/i, '')
+          .replace(/ Twisted Treeline$/i, '')
+          .replace(/ Howling Abyss$/i, '')
+          .replace(/ Butcher's Bridge$/i, '') 
+          .trim(); 
+      } else {
+        acc[queue.queueId] = queue.map; // Ultimate fallback to map name
+      }
       return acc;
     }, {});
   }
-  ddragonData.arenaAugmentData = processedArenaAugments; // Assign potentially null augment data
+  // --- End Updated Game Mode Map Logic ---
+
+  ddragonData.arenaAugmentData = processedArenaAugments;
   if (ddragonData.arenaAugmentData) { console.log(`Loaded ${Object.keys(ddragonData.arenaAugmentData).length} Arena Augments.`); }
   else { console.warn("Arena Augment data was not loaded for ProfilePage."); }
 
   return { latestPatchVersion, ddragonData };
 }
-// --- End Data Dragon Fetching Logic ---
 
-// Interface defining the expected URL parameters for this dynamic route
 interface ProfilePageProps {
-  params: Promise<{
-    region: string; // e.g., "na1"
-    riotId: string; // Combined "gameName-tagLine"
+  params: Promise<{ 
+    region: string; 
+    riotId: string; 
   }>;
 }
 
-// Function to generate dynamic metadata (title, description) for the page head
-export async function generateMetadata({ params }: ProfilePageProps): Promise<Metadata> {
-  // Need to await params since they're wrapped in a Promise in Next.js 15
-  const { region, riotId } = await params;
+export async function generateMetadata({ params: paramsPromise }: ProfilePageProps): Promise<Metadata> {
+  const { region, riotId } = await paramsPromise; 
   
   try {
-    // Decode parameters safely
     const decodedRiotId = decodeURIComponent(riotId ?? '');
     const decodedRegion = decodeURIComponent(region ?? '');
     const parts = decodedRiotId.split('-');
-    const tagLine = parts.pop() || "TAG"; // Provide default if split fails
-    const gameName = parts.join('-') || "Player"; // Provide default
+    const tagLine = parts.pop() || "TAG"; 
+    const gameName = parts.join('-') || "Player"; 
 
     return {
       title: `Profile: ${gameName}#${tagLine} (${decodedRegion.toUpperCase()}) - RiftRadar`,
       description: `View League of Legends profile, stats, and match history for ${gameName}#${tagLine} on ${decodedRegion.toUpperCase()}.`
     };
   } catch (error) {
-    // Fallback metadata in case of errors during generation
-    console.error("Error generating metadata for profile page:", error, params);
+    console.error("Error generating metadata for profile page:", error, { region, riotId }); 
     return {
       title: "Player Profile - RiftRadar",
       description: "View League of Legends player profiles."
@@ -157,64 +182,53 @@ export async function generateMetadata({ params }: ProfilePageProps): Promise<Me
   }
 }
 
-// The main Server Component for the profile page route
-export default async function ProfilePage({ params }: ProfilePageProps) {
-  // In Next.js 15, params is now a Promise that needs to be awaited
-  const { region: encodedRegion, riotId: encodedRiotId } = await params;
+export default async function ProfilePage({ params: paramsPromise }: ProfilePageProps) {
+  const { region: encodedRegion, riotId: encodedRiotId } = await paramsPromise;
 
-  // Basic validation for URL parameters
   if (!encodedRegion || !encodedRiotId) {
-    console.error("ProfilePage: Region or RiotId parameter is missing from URL params.", params);
-    notFound(); // Trigger Next.js 404 page
+    console.error("ProfilePage: Region or RiotId parameter is missing from URL params.", { encodedRegion, encodedRiotId });
+    notFound(); 
   }
 
   let region: string;
   let riotId: string;
 
-  // Decode parameters, handle potential errors
   try {
     region = decodeURIComponent(encodedRegion);
     riotId = decodeURIComponent(encodedRiotId);
   } catch (error) {
-    console.error("ProfilePage: Error decoding URL parameters.", error, params);
+    console.error("ProfilePage: Error decoding URL parameters.", error, { encodedRegion, encodedRiotId });
     notFound();
   }
 
-  // Parse gameName and tagLine from the combined riotId parameter
   const riotIdParts = riotId.split('-');
-  if (riotIdParts.length < 2) {
-    console.error(`ProfilePage: Invalid riotId format. Expected "gameName-tagLine", got: "${riotId}"`);
+  if (riotIdParts.length < 2 && !(riotIdParts.length === 1 && riotId.length > 0) ) { 
+    console.error(`ProfilePage: Invalid riotId format. Expected "gameName-tagLine" or just "gameName", got: "${riotId}"`);
     notFound();
   }
-  const gameName = riotIdParts.slice(0, -1).join('-');
-  const tagLine = riotIdParts[riotIdParts.length - 1];
-  if (!gameName || !tagLine) {
-      console.error(`ProfilePage: Could not parse gameName or tagLine from riotId: "${riotId}"`);
+  const gameName = riotIdParts.slice(0, -1).join('-') || riotIdParts[0]; 
+  const tagLine = riotIdParts.length > 1 ? riotIdParts[riotIdParts.length - 1] : ""; 
+
+  if (!gameName ) { 
+      console.error(`ProfilePage: Could not parse gameName from riotId: "${riotId}"`);
       notFound();
   }
 
   console.log(`ProfilePage Server Render: Region=${region}, GameName=${gameName}, TagLine=${tagLine}`);
 
-  // Fetch static Data Dragon assets required by the client component
   const { latestPatchVersion, ddragonData } = await getAllDDragonData();
 
   return (
-    // Main container with dark background
     <main className="flex min-h-screen flex-col items-center bg-gray-900 dark:bg-slate-950 text-gray-900 dark:text-gray-100">
-        {/* Full-width container for the client component */}
         <div className="w-full">
-            {/* Error boundary to catch client-side errors */}
             <ErrorBoundary FallbackComponent={ProfilePageErrorBoundaryFallback}>
-              {/* Suspense for loading state while client component hydrates/fetches */}
               <Suspense
                 fallback={
-                  // Simple loading indicator shown during initial client component load
-                  <div className="flex justify-center items-center min-h-[60vh]">
-                    <Loader2 className="h-12 w-12 animate-spin text-blue-400" />
-                  </div>
+                    <div className="flex justify-center items-center min-h-[60vh]">
+                      <Loader2 className="h-12 w-12 animate-spin text-blue-400" />
+                    </div>
                 }
               >
-                {/* Render the main client component, passing necessary data */}
                 <UserProfilePageClient
                   region={region}
                   gameName={gameName}
@@ -225,7 +239,6 @@ export default async function ProfilePage({ params }: ProfilePageProps) {
               </Suspense>
             </ErrorBoundary>
         </div>
-      {/* Footer outside the main content width constraint */}
       <footer className="mt-16 text-center text-sm text-gray-500 dark:text-gray-400 pb-8">
         <p>&copy; {new Date().getFullYear()} RiftRadar. Not affiliated with Riot Games.</p>
       </footer>

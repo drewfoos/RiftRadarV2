@@ -4,14 +4,15 @@
 import { useTRPC } from '@/trpc/client';
 import { useInfiniteQuery, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react'; // Added useEffect for logging
 
 import type { AppRouter } from '@/trpc/routers/_app';
 import type {
  DDragonChampion,
  DDragonDataBundle,
  LeagueEntryDTO,
- MatchDetailsData
+ MatchDetailsData,
+ MatchParticipantStats // Ensure MatchParticipantStats is imported if used directly for typing
 } from '@/types/ddragon';
 import type { TRPCClientErrorLike } from '@trpc/client';
 
@@ -26,6 +27,8 @@ import { RankedStatsCard } from './RankedStatsCard';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from '@/components/ui/button';
 import { Info, Loader2, RefreshCw, Search, ShieldAlert, UserX } from 'lucide-react';
+
+const COMPONENT_NAME_PROFILE_CLIENT = "UserProfilePageClient";
 
 // --- Constants ---
 const DEFAULT_MATCH_COUNT_PER_PAGE = 10;
@@ -62,73 +65,113 @@ export function UserProfilePageClient({
  initialDDragonData
 }: UserProfilePageClientProps) {
 
- const trpcClient = useTRPC();
- const queryClient = useQueryClient();
- const router = useRouter();
+  console.log(`[${COMPONENT_NAME_PROFILE_CLIENT}] Initializing with props:`, { region, gameName, tagLine, currentPatchVersion, ddragonDataLoaded: !!initialDDragonData });
 
- const [selectedQueueFilterKey, setSelectedQueueFilterKey] = useState<QueueFilterKey>('ALL');
- const currentQueueFilter = QUEUE_FILTERS[selectedQueueFilterKey];
+  const trpcClient = useTRPC();
+  const queryClient = useQueryClient();
+  const router = useRouter();
 
- // --- Data Fetching Hooks ---
- const profileQueryOptions = trpcClient.player.getProfileByRiotId.queryOptions(
+  const [selectedQueueFilterKey, setSelectedQueueFilterKey] = useState<QueueFilterKey>('ALL');
+  const currentQueueFilter = QUEUE_FILTERS[selectedQueueFilterKey];
+
+  // --- Data Fetching Hooks ---
+  const profileQueryOptions = trpcClient.player.getProfileByRiotId.queryOptions(
     { gameName, tagLine, platformId: region },
     { staleTime: 5 * 60 * 1000, gcTime: 15 * 60 * 1000, refetchOnWindowFocus: false, retry: 1 }
- );
- const {
+  );
+  const {
     data: profile,
     isLoading: isLoadingProfile,
     error: profileError,
     isError: isProfileError,
     refetch: refetchProfile,
- } = useQuery(profileQueryOptions);
+  } = useQuery(profileQueryOptions);
 
- const rankedQueryOptions = trpcClient.player.getRankedEntries.queryOptions(
+  useEffect(() => {
+    if (profile) {
+      console.debug(`[${COMPONENT_NAME_PROFILE_CLIENT}] Profile data loaded/updated:`, { puuid: profile.puuid, name: profile.name, summonerLevel: profile.summonerLevel });
+    }
+    if (isProfileError) {
+      console.error(`[${COMPONENT_NAME_PROFILE_CLIENT}] Error fetching profile:`, profileError);
+    }
+  }, [profile, isProfileError, profileError]);
+
+  const rankedQueryOptions = trpcClient.player.getRankedEntries.queryOptions(
     { summonerId: profile?.id ?? '', platformId: region },
     { enabled: !!profile?.id, staleTime: 10 * 60 * 1000, gcTime: 30 * 60 * 1000, refetchOnWindowFocus: false }
- );
- const { data: rankedEntries, isLoading: isLoadingRanked, error: rankedError } = useQuery(rankedQueryOptions);
+  );
+  const { data: rankedEntries, isLoading: isLoadingRanked, error: rankedError } = useQuery(rankedQueryOptions);
 
- const masteryQueryOptions = trpcClient.player.getChampionMastery.queryOptions(
+  const masteryQueryOptions = trpcClient.player.getChampionMastery.queryOptions(
       { puuid: profile?.puuid ?? '', platformId: region },
       { enabled: !!profile?.puuid, staleTime: 30 * 60 * 1000, gcTime: 60 * 60 * 1000, refetchOnWindowFocus: false }
- );
- const { data: championMastery, isLoading: isLoadingMastery, error: masteryError } = useQuery(masteryQueryOptions);
- 
- const matchIdsInfiniteQueryBaseOptions = trpcClient.match.getMatchIdsByPuuid.infiniteQueryOptions(
+  );
+  const { data: championMastery, isLoading: isLoadingMastery, error: masteryError } = useQuery(masteryQueryOptions);
+  
+  const matchIdsInfiniteQueryBaseOptions = trpcClient.match.getMatchIdsByPuuid.infiniteQueryOptions(
     { puuid: profile?.puuid ?? '', platformId: region, limit: DEFAULT_MATCH_COUNT_PER_PAGE, queue: currentQueueFilter.queueId, type: currentQueueFilter.type as MatchFilterType },
- );
- const {
+  );
+  const {
     data: matchPages,
     fetchNextPage, hasNextPage, isFetchingNextPage,
     isLoading: isLoadingMatchIdsInitial, isFetching: isFetchingMatchIds, error: matchIdsError,
     refetch: refetchMatchIdsPages,
- } = useInfiniteQuery({
+  } = useInfiniteQuery({
       ...matchIdsInfiniteQueryBaseOptions,
       enabled: !!profile?.puuid,
       staleTime: 5 * 60 * 1000,
       getNextPageParam: (lastPage) => lastPage.nextCursor,
       initialPageParam: 0,
- });
+  });
 
- const allMatchIds = useMemo(() => matchPages?.pages.flatMap((page) => page.items) ?? [], [matchPages]);
- const matchIdsForStats = useMemo(() => allMatchIds.slice(0, MAX_MATCHES_FOR_STATS), [allMatchIds]);
- const matchDetailsQueries = useQueries({
+  const allMatchIds = useMemo(() => {
+    const ids = matchPages?.pages.flatMap((page) => page.items) ?? [];
+    console.debug(`[${COMPONENT_NAME_PROFILE_CLIENT}.allMatchIds] Recalculated. Total match IDs: ${ids.length}`, ids.slice(0,5)); // Log first 5
+    return ids;
+  }, [matchPages]);
+
+  const matchIdsForStats = useMemo(() => {
+    const ids = allMatchIds.slice(0, MAX_MATCHES_FOR_STATS);
+    console.debug(`[${COMPONENT_NAME_PROFILE_CLIENT}.matchIdsForStats] Recalculated. Match IDs for stats: ${ids.length}`, ids);
+    return ids;
+  }, [allMatchIds]);
+  
+  const matchDetailsQueries = useQueries({
       queries: matchIdsForStats.map((matchId) =>
           trpcClient.match.getMatchDetails.queryOptions(
               { matchId, platformId: region },
-              { staleTime: Infinity, gcTime: 24 * 60 * 60 * 1000, enabled: !!matchId, retry: 1 }
+              { staleTime: Infinity, gcTime: 24 * 60 * 60 * 1000, enabled: !!matchId && !!profile?.puuid, retry: 1 } // Ensure profile.puuid is available
           )
       ),
- });
- const isLoadingMatchDetails = useMemo(() => matchDetailsQueries.some(q => q.isLoading), [matchDetailsQueries]);
- const loadedMatchDetails = useMemo(() => matchDetailsQueries.filter(q => q.isSuccess && q.data).map(q => q.data as MatchDetailsData), [matchDetailsQueries]);
+  });
 
- // --- Derived Data & Stats Calculations ---
- const soloRank = useMemo(() => rankedEntries?.find((entry: LeagueEntryDTO) => entry.queueType === 'RANKED_SOLO_5x5'), [rankedEntries]);
- const flexRank = useMemo(() => rankedEntries?.find((entry: LeagueEntryDTO) => entry.queueType === 'RANKED_FLEX_SR'), [rankedEntries]);
- const topMasteryChampions = useMemo(() => {
-      if (!championMastery || !initialDDragonData.championData) return [];
-      return [...championMastery]
+  const isLoadingMatchDetails = useMemo(() => {
+    const loading = matchDetailsQueries.some(q => q.isLoading);
+    // console.debug(`[${COMPONENT_NAME_PROFILE_CLIENT}.isLoadingMatchDetails] Is loading: ${loading}`);
+    return loading;
+  }, [matchDetailsQueries]);
+
+  const loadedMatchDetails = useMemo(() => {
+    const details = matchDetailsQueries.filter(q => q.isSuccess && q.data).map(q => q.data as MatchDetailsData);
+    console.debug(`[${COMPONENT_NAME_PROFILE_CLIENT}.loadedMatchDetails] Recalculated. Loaded match details count: ${details.length}`);
+    // For deeper debugging, you could log the participants of the first loaded match:
+    // if (details.length > 0 && details[0]?.info?.participants) {
+    //   console.debug(`[${COMPONENT_NAME_PROFILE_CLIENT}] Participants of first loaded match:`, details[0].info.participants.map(p => ({ puuid: p.puuid, summonerName: p.summonerName })));
+    // }
+    return details;
+  }, [matchDetailsQueries]);
+
+
+  // --- Derived Data & Stats Calculations ---
+  const soloRank = useMemo(() => rankedEntries?.find((entry: LeagueEntryDTO) => entry.queueType === 'RANKED_SOLO_5x5'), [rankedEntries]);
+  const flexRank = useMemo(() => rankedEntries?.find((entry: LeagueEntryDTO) => entry.queueType === 'RANKED_FLEX_SR'), [rankedEntries]);
+  
+  const topMasteryChampions = useMemo(() => {
+      if (!championMastery || !initialDDragonData.championData) {
+        // console.debug(`[${COMPONENT_NAME_PROFILE_CLIENT}.topMasteryChampions] Missing championMastery or championData.`);
+        return [];
+      }
+      const processed = [...championMastery]
           .sort((a, b) => b.championPoints - a.championPoints)
           .slice(0, 5)
           .map(mastery => {
@@ -140,12 +183,22 @@ export function UserProfilePageClient({
                   championNameId: championDetails?.id,
               };
           });
- }, [championMastery, initialDDragonData.championData]);
+      // console.debug(`[${COMPONENT_NAME_PROFILE_CLIENT}.topMasteryChampions] Processed top mastery champions:`, processed.map(p => p.championName));
+      return processed;
+  }, [championMastery, initialDDragonData.championData]);
 
- const championStats = useMemo((): ChampionPerformanceStat[] => {
-    if (!profile?.puuid || loadedMatchDetails.length === 0) return [];
+  const championStats = useMemo((): ChampionPerformanceStat[] => {
+    if (!profile?.puuid || loadedMatchDetails.length === 0 || !initialDDragonData.championData) {
+        // console.debug(`[${COMPONENT_NAME_PROFILE_CLIENT}.championStats] Missing data for calculation (profile.puuid: ${!!profile?.puuid}, loadedMatchDetails: ${loadedMatchDetails.length}, championData: ${!!initialDDragonData.championData})`);
+        return [];
+    }
     const stats: Record<number, ChampionPerformanceStat> = {};
     for (const match of loadedMatchDetails) {
+      // Ensure match.info and match.info.participants exist
+      if (!match?.info?.participants) {
+        console.warn(`[${COMPONENT_NAME_PROFILE_CLIENT}.championStats] Skipping match due to missing info or participants: ${match?.metadata?.matchId}`);
+        continue;
+      }
       const playerPerf = match.info.participants.find(p => p.puuid === profile.puuid);
       if (!playerPerf) continue;
       const champId = playerPerf.championId;
@@ -159,13 +212,22 @@ export function UserProfilePageClient({
       stats[champId].deaths += playerPerf.deaths;
       stats[champId].assists += playerPerf.assists;
     }
-    return Object.values(stats).sort((a, b) => b.games - a.games).slice(0, 5);
- }, [loadedMatchDetails, profile?.puuid, initialDDragonData.championData]);
+    const calculatedStats = Object.values(stats).sort((a, b) => b.games - a.games).slice(0, 5);
+    // console.debug(`[${COMPONENT_NAME_PROFILE_CLIENT}.championStats] Calculated champion stats:`, calculatedStats.map(s => ({ name: s.championName, games: s.games })));
+    return calculatedStats;
+  }, [loadedMatchDetails, profile?.puuid, initialDDragonData.championData]);
 
- const playedWithStats = useMemo((): PlayedWithStat[] => {
-    if (!profile?.puuid || loadedMatchDetails.length === 0) return [];
+  const playedWithStats = useMemo((): PlayedWithStat[] => {
+    if (!profile?.puuid || loadedMatchDetails.length === 0) {
+        // console.debug(`[${COMPONENT_NAME_PROFILE_CLIENT}.playedWithStats] Missing data for calculation (profile.puuid: ${!!profile?.puuid}, loadedMatchDetails: ${loadedMatchDetails.length})`);
+        return [];
+    }
     const teammates: Record<string, PlayedWithStat> = {};
     for (const match of loadedMatchDetails) {
+      if (!match?.info?.participants) {
+        console.warn(`[${COMPONENT_NAME_PROFILE_CLIENT}.playedWithStats] Skipping match due to missing info or participants: ${match?.metadata?.matchId}`);
+        continue;
+      }
       const playerPerf = match.info.participants.find(p => p.puuid === profile.puuid);
       if (!playerPerf) continue;
       const playerTeamId = playerPerf.teamId;
@@ -192,28 +254,34 @@ export function UserProfilePageClient({
         }
       }
     }
-    return Object.values(teammates)
+    const calculatedStats = Object.values(teammates)
       .filter(t => t.games >= 2)
       .sort((a, b) => b.games - a.games)
       .slice(0, 5);
- }, [loadedMatchDetails, profile?.puuid]);
+    // console.debug(`[${COMPONENT_NAME_PROFILE_CLIENT}.playedWithStats] Calculated playedWith stats:`, calculatedStats.map(s => ({ name: s.gameName, games: s.games })));
+    return calculatedStats;
+  }, [loadedMatchDetails, profile?.puuid]);
 
- // --- Type Casting for Errors ---
- const typedProfileError = profileError as TRPCClientErrorLike<AppRouter> | null;
- const typedRankedError = rankedError as TRPCClientErrorLike<AppRouter> | null;
- const typedMasteryError = masteryError as TRPCClientErrorLike<AppRouter> | null;
- const typedMatchIdsError = matchIdsError as TRPCClientErrorLike<AppRouter> | null;
+  const typedProfileError = profileError as TRPCClientErrorLike<AppRouter> | null;
+  const typedRankedError = rankedError as TRPCClientErrorLike<AppRouter> | null;
+  const typedMasteryError = masteryError as TRPCClientErrorLike<AppRouter> | null;
+  const typedMatchIdsError = matchIdsError as TRPCClientErrorLike<AppRouter> | null;
 
- // --- Event Handlers ---
- const handleFilterSelect = (newFilterKey: string) => {
+  const handleFilterSelect = (newFilterKey: string) => {
+      console.log(`[${COMPONENT_NAME_PROFILE_CLIENT}] Filter selected: ${newFilterKey}`);
       if (newFilterKey in QUEUE_FILTERS) {
           setSelectedQueueFilterKey(newFilterKey as QueueFilterKey);
-          queryClient.invalidateQueries({ queryKey: matchIdsInfiniteQueryBaseOptions.queryKey });
+          // Invalidate and refetch match IDs.
+          // Note: queryClient.invalidateQueries with queryKey from infiniteQueryOptions might need specific handling
+          // or ensure the key is stable and correctly targets the infinite query.
+          // For simplicity, refetchMatchIdsPages directly if available and reliable.
+          console.log(`[${COMPONENT_NAME_PROFILE_CLIENT}] Refetching match IDs for filter: ${newFilterKey}`);
+          refetchMatchIdsPages(); 
       }
- };
+  };
 
- // --- Loading / Error States ---
- if (isLoadingProfile) {
+  if (isLoadingProfile) {
+    console.log(`[${COMPONENT_NAME_PROFILE_CLIENT}] Rendering loading state for profile: ${gameName}#${tagLine}`);
     return (
       <div className="flex justify-center items-center min-h-[calc(100vh-10rem)]">
         <div className="flex flex-col items-center gap-4 p-8 rounded-lg bg-slate-800/50">
@@ -222,9 +290,10 @@ export function UserProfilePageClient({
         </div>
       </div>
     );
- }
+  }
 
- if (isProfileError) {
+  if (isProfileError) {
+    console.error(`[${COMPONENT_NAME_PROFILE_CLIENT}] Profile error state for ${gameName}#${tagLine}:`, typedProfileError);
     if (typedProfileError?.data?.code === 'NOT_FOUND') {
       return (
         <div className="flex flex-col items-center justify-center min-h-[calc(100vh-10rem)] text-center p-4">
@@ -236,7 +305,7 @@ export function UserProfilePageClient({
       );
     } else {
       return (
-          <div className="flex justify-center items-center min-h-[calc(100vh-10rem)] p-4">
+         <div className="flex justify-center items-center min-h-[calc(100vh-10rem)] p-4">
             <Alert variant="destructive" className="max-w-lg">
               <ShieldAlert className="h-4 w-4" />
               <AlertTitle>Error Fetching Profile</AlertTitle>
@@ -246,9 +315,10 @@ export function UserProfilePageClient({
           </div>
       );
     }
- }
+  }
 
- if (!profile) {
+  if (!profile) {
+    console.warn(`[${COMPONENT_NAME_PROFILE_CLIENT}] Profile data is null/undefined after loading for ${gameName}#${tagLine}. This should ideally be caught by isProfileError or isLoadingProfile.`);
      return (
         <div className="flex flex-col items-center justify-center min-h-[calc(100vh-10rem)] text-center p-4">
             <Info className="h-16 w-16 text-gray-500 mb-4" />
@@ -257,26 +327,22 @@ export function UserProfilePageClient({
               <Button onClick={() => router.push('/')} variant="outline" className="dark:text-slate-200 dark:border-slate-600 dark:hover:bg-slate-700"> <Search className="mr-2 h-4 w-4" /> Search Again </Button>
         </div>
      );
- }
+  }
 
- // --- Render Logic ---
- return (
+  console.debug(`[${COMPONENT_NAME_PROFILE_CLIENT}] Rendering main content for PUUID: ${profile.puuid}`);
+  return (
     <div className="w-full">
-        {/* Profile header section */}
         <ProfileHeader
             profile={profile}
             gameName={gameName}
             tagLine={tagLine}
             region={region}
             currentPatchVersion={currentPatchVersion}
-            profileError={typedProfileError}
+            profileError={typedProfileError} // Should be null if we reached here and profile is valid
         />
 
-        {/* Main content area */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          {/* Flex container for sidebar and main content */}
           <div className="flex flex-col lg:flex-row gap-6 lg:gap-8">
-            {/* Sidebar section */}
             <aside className="w-full lg:w-1/4 shrink-0 space-y-6">
               <RankedStatsCard
                   soloRank={soloRank}
@@ -284,7 +350,6 @@ export function UserProfilePageClient({
                   isLoading={isLoadingRanked}
                   error={typedRankedError}
               />
-              {/* Champion Performance Card - Hidden on mobile (screens smaller than lg breakpoint) */}
               <div className="hidden lg:block">
                 <ChampionPerformanceCard
                     stats={championStats}
@@ -301,9 +366,7 @@ export function UserProfilePageClient({
                   region={region}
               />
             </aside>
-            {/* Main content section (Match History and Champion Mastery) */}
             <div className="w-full lg:w-3/4 space-y-8">
-              {/* Champion Mastery Section - Hidden on mobile (screens smaller than lg breakpoint) */}
               <div className="hidden lg:block">
                 <ChampionMasterySection
                     topMasteryChampions={topMasteryChampions}
@@ -325,7 +388,7 @@ export function UserProfilePageClient({
                   matchIdsError={typedMatchIdsError}
                   matchPages={matchPages}
                   region={region}
-                  searchedPlayerPuuid={profile.puuid}
+                  searchedPlayerPuuid={profile.puuid} // Crucial: ensure this is correct
                   currentPatchVersion={currentPatchVersion}
                   initialDDragonData={initialDDragonData}
               />
@@ -333,5 +396,5 @@ export function UserProfilePageClient({
           </div>
         </div>
     </div>
- );
+  );
 }
