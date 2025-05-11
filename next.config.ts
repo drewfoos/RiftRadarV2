@@ -102,7 +102,7 @@ const nextConfig = {
   // Use Lightning CSS instead of optimizeCss (much faster CSS minifier)
   experimental: {
     // Enable Lightning CSS for CSS minification
-    useLightningcss: true,
+    // useLightningcss: true,
   },
 };
 
