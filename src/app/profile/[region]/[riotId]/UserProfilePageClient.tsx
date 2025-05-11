@@ -2,7 +2,7 @@
 'use client';
 
 import { useTRPC } from '@/trpc/client';
-import { useInfiniteQuery, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useQueries, useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react'; // Added useEffect for logging
 
