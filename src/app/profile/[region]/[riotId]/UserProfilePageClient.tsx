@@ -8,11 +8,10 @@ import { useEffect, useMemo, useState } from 'react'; // Added useEffect for log
 
 import type { AppRouter } from '@/trpc/routers/_app';
 import type {
- DDragonChampion,
- DDragonDataBundle,
- LeagueEntryDTO,
- MatchDetailsData,
- MatchParticipantStats // Ensure MatchParticipantStats is imported if used directly for typing
+  DDragonChampion,
+  DDragonDataBundle,
+  LeagueEntryDTO,
+  MatchDetailsData
 } from '@/types/ddragon';
 import type { TRPCClientErrorLike } from '@trpc/client';
 

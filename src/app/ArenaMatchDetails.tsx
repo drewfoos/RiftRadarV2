@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState } from 'react';
 
 import Link from 'next/link';
 import React from 'react';
@@ -27,8 +27,6 @@ import type {
     MatchDetailsData,
     MatchParticipantStats
 } from '@/types/ddragon';
-
-const COMPONENT_NAME = "ArenaMatchDetails";
 
 interface ArenaMatchDetailsProps {
   matchDetails: MatchDetailsData;
@@ -61,24 +59,16 @@ function getItemName(itemId: number): string {
     if (!itemId || itemId === 0) return "Empty Slot";
     // Assuming you might have itemData prop in the future or fetch it.
     // For now, returning a generic name.
-    // console.debug(`[${COMPONENT_NAME}.getItemName] Item ID: ${itemId}`);
     return `Item ID: ${itemId}`;
 }
 
 // Generates the URL for a champion's square icon.
 function getChampionSquareAssetUrl(championApiName: string | undefined, patchVersion: string, champData?: ArenaMatchDetailsProps['championData']): string {
-    if (!championApiName) {
-        console.warn(`[${COMPONENT_NAME}.getChampionSquareAssetUrl] championApiName is undefined. Using placeholder.`);
-        return "https://placehold.co/48x48/1F2937/4A5563?text=C";
-    }
+    if (!championApiName) return "https://placehold.co/48x48/1F2937/4A5563?text=C";
     let keyToUse = championApiName.replace(/[^a-zA-Z0-9]/g, '');
     if (champData) {
         const foundChamp = Object.values(champData).find(c => c.name === championApiName || c.id === championApiName);
-        if (foundChamp) {
-            keyToUse = foundChamp.id;
-        } else {
-            console.warn(`[${COMPONENT_NAME}.getChampionSquareAssetUrl] Champion "${championApiName}" not found in champData. Using processed name: ${keyToUse}`);
-        }
+        if (foundChamp) keyToUse = foundChamp.id;
     }
     return `${DDRAGON_BASE_URL}/${patchVersion}/img/champion/${keyToUse}.png`;
 }
@@ -89,14 +79,7 @@ function getSummonerSpellDetails(
     patchVersion: string,
     spellData?: ArenaMatchDetailsProps['summonerSpellData']
 ): { name: string; description: string; imageUrl: string } | null {
-    if (!spellApiId) {
-        // console.debug(`[${COMPONENT_NAME}.getSummonerSpellDetails] spellApiId is undefined or zero.`);
-        return null;
-    }
-    if (!spellData) {
-        console.warn(`[${COMPONENT_NAME}.getSummonerSpellDetails] summonerSpellData is undefined. Cannot find spell ID: ${spellApiId}`);
-        return null;
-    }
+    if (!spellApiId || !spellData) return null;
     const foundSpell = Object.values(spellData).find((s: DDragonSummonerSpell) => parseInt(s.key) === spellApiId);
     if (foundSpell) {
       return {
@@ -105,26 +88,15 @@ function getSummonerSpellDetails(
         imageUrl: `${DDRAGON_BASE_URL}/${patchVersion}/img/spell/${foundSpell.image.full}`
       };
     }
-    console.warn(`[${COMPONENT_NAME}.getSummonerSpellDetails] Spell with ID "${spellApiId}" not found in spellData.`);
     return null;
 }
 
 // Generates the URL for an Arena augment image.
 function getAugmentImageUrl(augmentId?: number, augmentData?: ArenaMatchDetailsProps['arenaAugmentData'], ddragonFullPatchVersion?: string ): string | null {
-    if (!augmentId || augmentId === 0) {
-        // This is common for empty augment slots, so not a warning.
-        // console.debug(`[${COMPONENT_NAME}.getAugmentImageUrl] Augment ID is missing or zero.`);
-        return null;
-    }
-    if (!augmentData) {
-        console.warn(`[${COMPONENT_NAME}.getAugmentImageUrl] arenaAugmentData is undefined. Cannot find augment ID: ${augmentId}. Using placeholder.`);
-        return "https://placehold.co/28x28/1f2937/374151?text=A";
-    }
+    if (!augmentId || augmentId === 0) return null;
+    if (!augmentData) return "https://placehold.co/28x28/1f2937/374151?text=A"; // Placeholder if no augment data
     const foundAugment = augmentData[augmentId];
-    if (!foundAugment) {
-        console.warn(`[${COMPONENT_NAME}.getAugmentImageUrl] Augment ID ${augmentId} not found in arenaAugmentData. Using placeholder.`);
-        return "https://placehold.co/28x28/1f2937/374151?text=A";
-    }
+    if (!foundAugment) return "https://placehold.co/28x28/1f2937/374151?text=A"; // Placeholder if specific augment not found
 
     const iconPathFromData = foundAugment.iconSmall || foundAugment.iconLarge || foundAugment.iconPath;
 
@@ -132,7 +104,7 @@ function getAugmentImageUrl(augmentId?: number, augmentData?: ArenaMatchDetailsP
         let relativePath = iconPathFromData.toLowerCase().replace(/\.dds$/, '.png');
         if (!relativePath.endsWith('.png')) relativePath += '.png';
 
-        let cdragonPatchSegment = "latest";
+        let cdragonPatchSegment = "latest"; // Default to latest for community dragon
         if (ddragonFullPatchVersion && ddragonFullPatchVersion !== "latest") {
             const parts = ddragonFullPatchVersion.split('.');
             cdragonPatchSegment = (parts.length >= 2) ? `${parts[0]}.${parts[1]}` : ddragonFullPatchVersion;
@@ -140,31 +112,18 @@ function getAugmentImageUrl(augmentId?: number, augmentData?: ArenaMatchDetailsP
         
         if (relativePath.startsWith('/')) relativePath = relativePath.substring(1);
         if (!relativePath.startsWith('assets/')) {
-            // This path correction logic might need to be adjusted based on actual Community Dragon structure
-            const originalRelativePath = relativePath;
             relativePath = `assets/ux/cherry/augments/icons/${relativePath.split('/').pop()}`;
-            // console.debug(`[${COMPONENT_NAME}.getAugmentImageUrl] Corrected relative path from "${originalRelativePath}" to "${relativePath}" for augment ${augmentId}`);
         }
         
         return `${COMMUNITY_DRAGON_THEMED_ASSET_BASE}${cdragonPatchSegment}/game/${relativePath}`;
     }
-    console.warn(`[${COMPONENT_NAME}.getAugmentImageUrl] No valid iconPath found for augment ID ${augmentId}. Augment data:`, foundAugment, "Using placeholder.");
     return "https://placehold.co/28x28/1f2937/374151?text=A"; // Fallback placeholder
 }
 
 // Gets the name of an Arena augment.
 function getAugmentName(augmentId?: number, augmentData?: ArenaMatchDetailsProps['arenaAugmentData']): string {
-    if (!augmentId) return "Unknown Augment (No ID)";
-    if (!augmentData) {
-        console.warn(`[${COMPONENT_NAME}.getAugmentName] arenaAugmentData is undefined. Cannot find name for augment ID: ${augmentId}`);
-        return `Augment ID: ${augmentId}`;
-    }
-    const name = augmentData[augmentId]?.name;
-    if (!name) {
-        console.warn(`[${COMPONENT_NAME}.getAugmentName] Name for augment ID ${augmentId} not found in arenaAugmentData.`);
-        return `Augment ID: ${augmentId}`;
-    }
-    return name;
+    if (!augmentId || !augmentData) return "Unknown Augment";
+    return augmentData[augmentId]?.name || `Augment ID: ${augmentId}`;
 }
 
 function formatKDA(k: number, d: number, a: number): string { return `${k} / ${d} / ${a}`; }
@@ -218,10 +177,7 @@ function calculateArenaPerformanceScore(
     allParticipants: MatchParticipantStats[],
     gameDurationSeconds: number
 ): number {
-    if (gameDurationSeconds < ARENA_MIN_VALID_GAME_DURATION_FOR_SCORE) {
-        // console.debug(`[${COMPONENT_NAME}.calculateArenaPerformanceScore] Game duration ${gameDurationSeconds}s is less than minimum ${ARENA_MIN_VALID_GAME_DURATION_FOR_SCORE}s. Score is 0.`);
-        return 0;
-    }
+    if (gameDurationSeconds < ARENA_MIN_VALID_GAME_DURATION_FOR_SCORE) return 0;
 
     let score = 0;
     const placement = playerStats.subteamPlacement;
@@ -267,9 +223,7 @@ function calculateArenaPerformanceScore(
     else if (totalSupportStats >= 5000) score += 7;
     else if (totalSupportStats >= 2000) score += 3;
     
-    const finalScore = Math.min(Math.max(Math.round(score), 0), 100);
-    // console.debug(`[${COMPONENT_NAME}.calculateArenaPerformanceScore] Calculated score: ${finalScore} for player ${playerStats.summonerName}`, { playerStats, scoreDetails: { placement, kdaRatio, totalDamageDealt, maxDamageInGame, totalSupportStats } });
-    return finalScore;
+    return Math.min(Math.max(Math.round(score), 0), 100);
 }
 
 interface CircularProgressScoreProps { score: number; isInvalidGame: boolean; size?: number; strokeWidth?: number; hideLabel?: boolean; }
@@ -328,105 +282,54 @@ export function ArenaMatchDetails({
   arenaAugmentData, platformId,
 }: ArenaMatchDetailsProps) {
   const [isOpen, setIsOpen] = useState(false);
-  
-  // Log initial props
-  useEffect(() => {
-    console.debug(`[${COMPONENT_NAME}] Initializing with props:`, { matchDetails, searchedPlayerPuuid, currentPatchVersion, platformId, summonerSpellDataLoaded: !!summonerSpellData, championDataLoaded: !!championData, arenaAugmentDataLoaded: !!arenaAugmentData });
-  }, []); // Empty dependency array means this runs once on mount
-
-  // Log critical prop changes
-  useEffect(() => {
-    console.debug(`[${COMPONENT_NAME}] matchDetails or searchedPlayerPuuid changed:`, { matchDetails, searchedPlayerPuuid });
-  }, [matchDetails, searchedPlayerPuuid]);
-
-
   const { info } = matchDetails;
-  if (!info) {
-    console.error(`[${COMPONENT_NAME}] matchDetails.info is undefined. Cannot render component. Match ID: ${matchDetails?.metadata?.matchId}`);
-    return (
-        <Alert variant="destructive" className="mb-3">
-            <ShieldAlert className="h-4 w-4" />
-            <AlertTitle>Critical Error</AlertTitle>
-            <AlertDescription>Match information is missing or malformed. Match ID: {matchDetails?.metadata?.matchId || 'Unknown'}</AlertDescription>
-        </Alert>
-    );
-  }
 
-
-  const searchedPlayerStats = useMemo(() => {
-    console.debug(`[${COMPONENT_NAME}.searchedPlayerStats] Recalculating searchedPlayerStats. Participants count: ${info.participants?.length}, PUUID: ${searchedPlayerPuuid}`);
-    const player = info.participants.find((p: MatchParticipantStats) => p.puuid === searchedPlayerPuuid);
-    if (!player) {
-        console.warn(`[${COMPONENT_NAME}.searchedPlayerStats] Searched player with PUUID ${searchedPlayerPuuid} not found in participants.`);
-    }
-    return player;
-  }, [info.participants, searchedPlayerPuuid]);
+  const searchedPlayerStats = useMemo(() => info.participants.find((p: MatchParticipantStats) => p.puuid === searchedPlayerPuuid), [info.participants, searchedPlayerPuuid]);
 
   const arenaTeams: ArenaTeam[] = useMemo(() => {
-    console.debug(`[${COMPONENT_NAME}.arenaTeams] Recalculating arenaTeams. Participants count: ${info.participants?.length}`);
     const groupedBySubteam: Record<number, MatchParticipantStats[]> = {};
     info.participants.forEach((p: MatchParticipantStats) => {
         if (p.playerSubteamId) { 
             if (!groupedBySubteam[p.playerSubteamId]) groupedBySubteam[p.playerSubteamId] = [];
             groupedBySubteam[p.playerSubteamId].push(p);
         } else { 
-            console.warn(`[${COMPONENT_NAME}.arenaTeams] Participant missing playerSubteamId in Arena match:`, p.summonerName, p.puuid);
+            console.warn("Participant missing playerSubteamId in Arena match:", p);
         }
     });
-    const teams = Object.entries(groupedBySubteam)
+    return Object.entries(groupedBySubteam)
         .map(([subteamId, members]) => ({ 
             subteamId: parseInt(subteamId), 
-            placement: members[0]?.subteamPlacement ?? 99, // Default to a high placement if undefined
+            placement: members[0]?.subteamPlacement ?? 99, 
             members: members.sort((a,b) => a.participantId - b.participantId), 
         }))
-        .sort((teamA, teamB) => teamA.placement - teamB.placement);
-    console.debug(`[${COMPONENT_NAME}.arenaTeams] Calculated teams:`, teams);
-    return teams;
+        .sort((teamA, teamB) => teamA.placement - teamB.placement); 
   }, [info.participants]);
 
   const performanceScore = useMemo(() => {
-    if (!searchedPlayerStats || !info.participants) {
-        console.debug(`[${COMPONENT_NAME}.performanceScore] Cannot calculate score, missing searchedPlayerStats or participants.`);
-        return 0;
-    }
-    const score = calculateArenaPerformanceScore(searchedPlayerStats, info.participants, info.gameDuration);
-    console.debug(`[${COMPONENT_NAME}.performanceScore] Calculated performance score: ${score} for player ${searchedPlayerStats.summonerName}`);
-    return score;
+    if (!searchedPlayerStats || !info.participants) return 0;
+    return calculateArenaPerformanceScore(searchedPlayerStats, info.participants, info.gameDuration);
   }, [searchedPlayerStats, info.participants, info.gameDuration]);
 
-  const isInvalidGameForScore = useMemo(() => {
-    const invalid = info.gameDuration < ARENA_MIN_VALID_GAME_DURATION_FOR_SCORE;
-    console.debug(`[${COMPONENT_NAME}.isInvalidGameForScore] Game duration: ${info.gameDuration}s. Invalid for score: ${invalid}`);
-    return invalid;
-  }, [info.gameDuration]);
+  const isInvalidGameForScore = useMemo(() => info.gameDuration < ARENA_MIN_VALID_GAME_DURATION_FOR_SCORE, [info.gameDuration]);
   
   const spell1Details = useMemo(() => {
     if (!searchedPlayerStats) return null; 
-    // console.debug(`[${COMPONENT_NAME}.spell1Details] Getting details for spell1Id: ${searchedPlayerStats.summoner1Id}`);
     return getSummonerSpellDetails(searchedPlayerStats.summoner1Id, currentPatchVersion, summonerSpellData);
   }, [searchedPlayerStats, currentPatchVersion, summonerSpellData]);
 
   const spell2Details = useMemo(() => {
     if (!searchedPlayerStats) return null; 
-    // console.debug(`[${COMPONENT_NAME}.spell2Details] Getting details for spell2Id: ${searchedPlayerStats.summoner2Id}`);
     return getSummonerSpellDetails(searchedPlayerStats.summoner2Id, currentPatchVersion, summonerSpellData);
   }, [searchedPlayerStats, currentPatchVersion, summonerSpellData]);
 
-  const handleToggleOpen = (newOpenState: boolean) => {
-    console.debug(`[${COMPONENT_NAME}] Collapsible state changed to: ${newOpenState}`);
-    setIsOpen(newOpenState);
-  };
-
-
   if (!searchedPlayerStats) {
-    console.error(`[${COMPONENT_NAME}] Searched player data (PUUID: ${searchedPlayerPuuid}) not found in this Arena match (ID: ${matchDetails.metadata.matchId}). This should not happen if props are correct.`);
-    return (
-        <Alert variant="destructive" className="mb-3">
-            <ShieldAlert className="h-4 w-4" />
-            <AlertTitle>Error: Player Not Found</AlertTitle>
-            <AlertDescription>Searched player data was not found in this Arena match. PUUID: {searchedPlayerPuuid}. Match ID: {matchDetails.metadata.matchId}</AlertDescription>
-        </Alert>
-    );
+      return (
+          <Alert variant="destructive" className="mb-3">
+              <ShieldAlert className="h-4 w-4" />
+              <AlertTitle>Error</AlertTitle>
+              <AlertDescription>Searched player data not found in this Arena match.</AlertDescription>
+          </Alert>
+      );
   }
 
   const player = searchedPlayerStats; 
@@ -449,21 +352,19 @@ export function ArenaMatchDetails({
     <TooltipProvider delayDuration={100}>
         <Collapsible
             open={isOpen}
-            onOpenChange={handleToggleOpen} // Use the new handler
+            onOpenChange={setIsOpen}
             className={`match-card-arena mb-3 shadow-lg rounded-lg overflow-hidden bg-slate-900 text-gray-300 border border-slate-700/50 border-l-4 ${outcomeBorderColor}`}
         >
           <CollapsibleTrigger asChild>
             <div 
               className={`w-full block hover:brightness-125 transition-all cursor-pointer bg-gradient-to-r ${outcomeBgGradient}`} 
               onClick={(e) => { 
-                // Prevents toggling when clicking on interactive elements inside the trigger
-                if ((e.target as HTMLElement).closest('button, a, [data-state="open"], [data-state="closed"]')) return; 
-                handleToggleOpen(!isOpen); // Toggle manually
+                if ((e.target as HTMLElement).closest('button, a, [data-state]')) return; 
+                setIsOpen(!isOpen); 
               }}
             >
               <div className="p-3">
                 <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-                  {/* Placement and Game Info Block */}
                   <div className={`flex flex-col items-center justify-center text-center w-[75px] sm:w-[85px] shrink-0 p-1.5 rounded-md ${isWin ? (playerPlacement === 1 ? 'bg-yellow-950/30' : 'bg-blue-950/20') : 'bg-red-950/20'}`}>
                     <span className={`font-bold text-lg ${playerPlacement === 1 ? 'text-yellow-400' : (isWin ? 'text-blue-400' : 'text-red-400')}`}>
                       {getPlacementTextShorthand(playerPlacement)}
@@ -472,8 +373,6 @@ export function ArenaMatchDetails({
                     <div className="text-[10px] text-gray-400">{formatGameDuration(info.gameDuration)}</div>
                     <div className="text-[10px] text-gray-400">{timeAgo(gameEndTime)}</div>
                   </div>
-                  
-                  {/* Champion Icon and Level */}
                   <div className="flex flex-col items-center shrink-0">
                     <Tooltip>
                         <TooltipTrigger asChild><Avatar className="h-12 w-12 sm:h-14 sm:w-14 border-2 border-slate-600 rounded-md">
@@ -488,9 +387,7 @@ export function ArenaMatchDetails({
                       Lvl {player.champLevel}
                     </span>
                   </div>
-
-                  {/* KDA and Augments */}
-                  <div className="flex-grow flex flex-col justify-center px-1 sm:px-2 space-y-1.5 mr-5"> {/* Added mr-5 for spacing from spells/items block */}
+                  <div className="flex-grow flex flex-col justify-center px-1 sm:px-2 space-y-1.5 mr-5">
                       <div className="flex items-center gap-2 text-sm sm:text-base">
                           <div className="flex items-baseline gap-0.5">
                               <span className="font-bold text-gray-100">{player.kills}</span><span className="text-gray-500 text-xs">/</span>
@@ -506,7 +403,7 @@ export function ArenaMatchDetails({
                               const augmentInfo = arenaAugmentData && augId ? arenaAugmentData[augId] : undefined;
                               const augmentImageUrl = getAugmentImageUrl(augId, arenaAugmentData, currentPatchVersion);
                               return (
-                                  <Tooltip key={`player-aug-main-${idx}-${augId || `empty-${Math.random()}`}`}> {/* Ensure unique key for empty slots */}
+                                  <Tooltip key={`player-aug-main-${idx}-${augId || 'empty'}`}>
                                       <TooltipTrigger asChild>
                                           <Avatar className={`h-7 w-7 rounded-sm border-2 ${getAugmentRarityBorder(augmentInfo?.rarity)} bg-slate-800 flex items-center justify-center`}>
                                               {augmentImageUrl ? <AvatarImage src={augmentImageUrl} alt={getAugmentName(augId, arenaAugmentData)} /> : <CircleSlash className="h-4 w-4 text-slate-500" />}
@@ -518,10 +415,8 @@ export function ArenaMatchDetails({
                           })}
                       </div>
                   </div>
-
-                  {/* Spells and Items Block */}
                   <div className="flex items-center gap-2 p-2 bg-slate-800/60 rounded-md shadow-inner shrink-0 mr-2"> 
-                    <div className="flex flex-col gap-1"> {/* Summoner Spells */}
+                    <div className="flex flex-col gap-1">
                         {spell1Details ? (
                             <Tooltip>
                                 <TooltipTrigger asChild><Avatar className="h-7 w-7 rounded-sm bg-slate-700 flex items-center justify-center">
@@ -549,14 +444,14 @@ export function ArenaMatchDetails({
                             <Avatar className="h-7 w-7 rounded-sm bg-slate-700 flex items-center justify-center"><CircleSlash className="h-4 w-4 text-slate-500"/></Avatar>
                         )}
                     </div>
-                    <div className="border-l border-slate-600/70 h-14 self-stretch mx-1.5"></div> {/* Vertical Separator */}
-                    <div className="flex flex-col gap-0.5"> {/* Items */}
+                    <div className="border-l border-slate-600/70 h-14 self-stretch mx-1.5"></div>
+                    <div className="flex flex-col gap-0.5">
                         <div className="flex gap-0.5">
                             {playerItemsRow1.map((itemId, idx) => {
                                 const imageUrl = getItemImageUrl(itemId, currentPatchVersion);
                                 const itemName = getItemName(itemId); 
                                 return (
-                                <Tooltip key={`player-item-row1-${idx}-${itemId || `empty-${Math.random()}`}`}>
+                                <Tooltip key={`player-item-row1-${idx}-${itemId}`}>
                                     <TooltipTrigger asChild><Avatar className="h-7 w-7 rounded-sm bg-slate-700 flex items-center justify-center">
                                         {imageUrl ? <AvatarImage src={imageUrl} alt={itemName}/> : <CircleSlash className="h-4 w-4 text-slate-500"/>}
                                     </Avatar></TooltipTrigger>
@@ -570,7 +465,7 @@ export function ArenaMatchDetails({
                                 const imageUrl = getItemImageUrl(itemId, currentPatchVersion);
                                 const itemName = getItemName(itemId);
                                 return (
-                                <Tooltip key={`player-item-row2-${idx}-${itemId || `empty-${Math.random()}`}`}>
+                                <Tooltip key={`player-item-row2-${idx}-${itemId}`}>
                                     <TooltipTrigger asChild><Avatar className="h-7 w-7 rounded-sm bg-slate-700 flex items-center justify-center">
                                         {imageUrl ? <AvatarImage src={imageUrl} alt={itemName}/> : <CircleSlash className="h-4 w-4 text-slate-500"/>}
                                     </Avatar></TooltipTrigger>
@@ -578,7 +473,6 @@ export function ArenaMatchDetails({
                                 </Tooltip>
                                 );
                             })}
-                            {/* Fill empty slots in row 2 if less than 3 items */}
                             {playerItemsRow2.length < 3 && Array(3 - playerItemsRow2.length).fill(0).map((_, emptyIdx) => (
                                 <Avatar key={`empty-item-row2-${emptyIdx}`} className="h-7 w-7 rounded-sm bg-slate-700/70 flex items-center justify-center">
                                     <CircleSlash className="h-4 w-4 text-slate-600" />
@@ -587,13 +481,9 @@ export function ArenaMatchDetails({
                         </div>
                     </div>
                   </div>
-                  
-                  {/* Performance Score */}
-                  <div className="flex items-center justify-center shrink-0 w-16 md:w-20 ml-auto mr-2"> {/* ml-auto pushes it right, mr-2 for spacing */}
-                        <CircularProgressScore score={performanceScore} isInvalidGame={isInvalidGameForScore} size={48} strokeWidth={4}/>
+                  <div className="flex items-center justify-center shrink-0 w-16 md:w-20 ml-auto mr-2"> 
+                       <CircularProgressScore score={performanceScore} isInvalidGame={isInvalidGameForScore} size={48} strokeWidth={4}/>
                   </div>
-
-                  {/* Expand/Collapse Chevron */}
                   <div className="flex items-center pl-1 shrink-0 self-center"> 
                       <Button variant="ghost" size="icon" className="h-7 w-7 data-[state=open]:bg-slate-700 hover:bg-slate-600 rounded-full text-gray-400 hover:text-gray-200">
                           {isOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
@@ -626,8 +516,7 @@ export function ArenaMatchDetails({
                                         <th className="p-1.5 text-left font-medium text-gray-300">Items</th>
                                     </tr>
                                 </thead>
-                                {/* IMPORTANT: Remove any whitespace text nodes between <tbody> and first <tr> to prevent hydration errors if using SSR/Next.js static generation */}
-                                <tbody> 
+                                <tbody>{/* Ensure no whitespace text node here */}
                                     {team.members.map((p: MatchParticipantStats) => (
                                         <tr key={p.puuid} className={`border-t border-slate-700/50 ${p.puuid === searchedPlayerPuuid ? 'bg-blue-900/20' : 'hover:bg-slate-700/10'}`}>
                                             <td className="p-1.5 whitespace-nowrap">
@@ -635,7 +524,7 @@ export function ArenaMatchDetails({
                                                     <Avatar className="h-7 w-7 rounded-md"><AvatarImage src={getChampionSquareAssetUrl(p.championName, currentPatchVersion, championData)} alt={p.championName}/></Avatar>
                                                     <div className="flex flex-col leading-tight">
                                                         <Link href={`/profile/${platformId}/${encodeURIComponent(p.riotIdGameName || p.summonerName)}-${encodeURIComponent(p.riotIdTagline || "")}`} className="hover:text-purple-300 hover:underline transition-colors">
-                                                            <span className="truncate font-medium text-gray-100 max-w-[100px] sm:max-w-[150px]" title={`${p.riotIdGameName || p.summonerName}${p.riotIdTagline ? `#${p.riotIdTagline}`: ''}`}>{p.riotIdGameName || p.summonerName}</span>
+                                                          <span className="truncate font-medium text-gray-100 max-w-[100px] sm:max-w-[150px]" title={`${p.riotIdGameName || p.summonerName}${p.riotIdTagline ? `#${p.riotIdTagline}`: ''}`}>{p.riotIdGameName || p.summonerName}</span>
                                                         </Link>
                                                         {p.riotIdTagline && <span className="text-gray-500 text-[9px]">#{p.riotIdTagline}</span>}
                                                     </div>
@@ -649,7 +538,7 @@ export function ArenaMatchDetails({
                                                         const augmentInfo = arenaAugmentData && augId ? arenaAugmentData[augId] : undefined;
                                                         const augImageUrl = getAugmentImageUrl(augId, arenaAugmentData, currentPatchVersion);
                                                         return (
-                                                            <Tooltip key={`table-aug-${p.puuid}-${idx}-${augId || `empty-${Math.random()}`}`}>
+                                                            <Tooltip key={`table-aug-${p.puuid}-${idx}-${augId || 'empty'}`}>
                                                                 <TooltipTrigger asChild>
                                                                     <Avatar className={`h-5 w-5 rounded-sm border ${getAugmentRarityBorder(augmentInfo?.rarity)} bg-slate-800 flex items-center justify-center`}>
                                                                         {augImageUrl ? <AvatarImage src={augImageUrl} alt={getAugmentName(augId, arenaAugmentData)} /> : <CircleSlash className="h-3 w-3 text-slate-600" />}
@@ -667,7 +556,7 @@ export function ArenaMatchDetails({
                                                         const imageUrl = getItemImageUrl(itemId, currentPatchVersion);
                                                         const itemName = getItemName(itemId);
                                                         return (
-                                                            <Tooltip key={`table-item-${p.puuid}-${idx}-${itemId || `empty-${Math.random()}`}`}>
+                                                            <Tooltip key={`table-item-${p.puuid}-${idx}-${itemId}`}>
                                                                 <TooltipTrigger asChild><Avatar className="h-5 w-5 rounded-sm bg-slate-800 flex items-center justify-center">
                                                                     {imageUrl ? <AvatarImage src={imageUrl} alt={itemName}/> : <CircleSlash className="h-3 w-3 text-slate-600" />}
                                                                 </Avatar></TooltipTrigger>
