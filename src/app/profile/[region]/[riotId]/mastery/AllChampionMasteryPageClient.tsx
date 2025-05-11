@@ -15,7 +15,7 @@ import type { TRPCClientErrorLike } from '@trpc/client';
 import { ProfileHeader } from '../ProfileHeader'; 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Crown, Loader2, Search, ShieldAlert, Star, UserX } from 'lucide-react';
 import Image from 'next/image';
@@ -52,11 +52,9 @@ export function AllChampionMasteryPageClient({
   tagLine,
 }: AllChampionMasteryPageClientProps) {
 
-  const trpc = useTRPC(); // Renamed from trpcClient for clarity, it's the tRPC context hook's return
+  const trpc = useTRPC(); 
   const router = useRouter();
 
-  // 1. Fetch DDragon Data Bundle using queryOptions
-  // The input for getDDragonBundle is void/undefined, so pass undefined as the first argument.
   const ddragonBundleOptions = trpc.player.getDDragonBundle.queryOptions(undefined, {
     staleTime: Infinity, 
     gcTime: 24 * 60 * 60 * 1000, 
@@ -67,7 +65,6 @@ export function AllChampionMasteryPageClient({
   const initialDDragonData = ddragonBundleQuery.data;
   const currentPatchVersion = ddragonBundleQuery.data?.version;
 
-  // 2. Fetch base profile information (needed for PUUID)
   const profileOptions = trpc.player.getProfileByRiotId.queryOptions(
     { gameName, tagLine, platformId: region },
     { 
@@ -84,7 +81,6 @@ export function AllChampionMasteryPageClient({
     isError: isProfileError,
   } = useTanStackQuery(profileOptions);
 
-  // 3. Fetch all champion mastery data
   const masteryOptions = trpc.player.getChampionMastery.queryOptions(
       { puuid: profile?.puuid ?? '', platformId: region },
       { 
@@ -100,7 +96,6 @@ export function AllChampionMasteryPageClient({
     error: masteryError 
   } = useTanStackQuery(masteryOptions);
 
-  // 4. Process mastery data
   const processedMasteries = useMemo((): ProcessedMastery[] => {
     if (!allChampionMastery || !initialDDragonData?.championData || !currentPatchVersion) return [];
     return [...allChampionMastery]
@@ -225,7 +220,8 @@ export function AllChampionMasteryPageClient({
                 </CardHeader>
 
                 {!isMasteryDataLoading && !typedMasteryError && processedMasteries.length > 0 && (
-                    <CardContent className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4 p-4">
+                    // Updated grid classes for better mobile layout
+                    <CardContent className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 p-3 md:gap-4 md:p-4">
                         {processedMasteries.map((mastery) => (
                             <TooltipProvider key={mastery.championId} delayDuration={100}>
                                 <Tooltip>
@@ -239,7 +235,7 @@ export function AllChampionMasteryPageClient({
                                                 className="rounded-lg mb-2 border-2 border-slate-600"
                                                 loading="lazy"
                                             />
-                                            <p className="text-base font-semibold text-slate-50 truncate max-w-[120px] text-center">{mastery.championName}</p>
+                                            <p className="text-base font-semibold text-slate-50 truncate max-w-[100px] sm:max-w-[120px] text-center">{mastery.championName}</p>
                                             <div className="flex items-center gap-1 mt-1">
                                                 <Star className="h-4 w-4 text-yellow-400" />
                                                 <span className="text-sm font-medium text-slate-200">Lvl {mastery.championLevel}</span>
@@ -266,7 +262,7 @@ export function AllChampionMasteryPageClient({
                         <p className="text-slate-400 text-sm italic text-center py-4">No champion mastery data found for this player.</p>
                     </CardContent>
                 )}
-                 {isMasteryDataLoading && ( 
+                 {(isMasteryDataLoading && !allChampionMastery) && ( // Show loader only if mastery data is truly loading and not yet available
                     <CardContent className="flex justify-center items-center py-10">
                         <Loader2 className="h-8 w-8 animate-spin text-purple-400" />
                         <p className="ml-3 text-slate-300">Loading mastery data...</p>
