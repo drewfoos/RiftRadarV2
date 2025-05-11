@@ -57,6 +57,8 @@ function getItemImageUrl(itemId: number, patchVersion: string): string | null {
 // Gets the name of an item.
 function getItemName(itemId: number): string {
     if (!itemId || itemId === 0) return "Empty Slot";
+    // Assuming you might have itemData prop in the future or fetch it.
+    // For now, returning a generic name.
     return `Item ID: ${itemId}`;
 }
 
@@ -92,9 +94,9 @@ function getSummonerSpellDetails(
 // Generates the URL for an Arena augment image.
 function getAugmentImageUrl(augmentId?: number, augmentData?: ArenaMatchDetailsProps['arenaAugmentData'], ddragonFullPatchVersion?: string ): string | null {
     if (!augmentId || augmentId === 0) return null;
-    if (!augmentData) return "https://placehold.co/28x28/1f2937/374151?text=A";
+    if (!augmentData) return "https://placehold.co/28x28/1f2937/374151?text=A"; // Placeholder if no augment data
     const foundAugment = augmentData[augmentId];
-    if (!foundAugment) return "https://placehold.co/28x28/1f2937/374151?text=A";
+    if (!foundAugment) return "https://placehold.co/28x28/1f2937/374151?text=A"; // Placeholder if specific augment not found
 
     const iconPathFromData = foundAugment.iconSmall || foundAugment.iconLarge || foundAugment.iconPath;
 
@@ -102,12 +104,12 @@ function getAugmentImageUrl(augmentId?: number, augmentData?: ArenaMatchDetailsP
         let relativePath = iconPathFromData.toLowerCase().replace(/\.dds$/, '.png');
         if (!relativePath.endsWith('.png')) relativePath += '.png';
 
-        let cdragonPatchSegment = "latest";
+        let cdragonPatchSegment = "latest"; // Default to latest for community dragon
         if (ddragonFullPatchVersion && ddragonFullPatchVersion !== "latest") {
             const parts = ddragonFullPatchVersion.split('.');
             cdragonPatchSegment = (parts.length >= 2) ? `${parts[0]}.${parts[1]}` : ddragonFullPatchVersion;
         }
-
+        
         if (relativePath.startsWith('/')) relativePath = relativePath.substring(1);
         if (!relativePath.startsWith('assets/')) {
             relativePath = `assets/ux/cherry/augments/icons/${relativePath.split('/').pop()}`;
@@ -115,7 +117,7 @@ function getAugmentImageUrl(augmentId?: number, augmentData?: ArenaMatchDetailsP
         
         return `${COMMUNITY_DRAGON_THEMED_ASSET_BASE}${cdragonPatchSegment}/game/${relativePath}`;
     }
-    return "https://placehold.co/28x28/1f2937/374151?text=A";
+    return "https://placehold.co/28x28/1f2937/374151?text=A"; // Fallback placeholder
 }
 
 // Gets the name of an Arena augment.
@@ -170,7 +172,6 @@ const getPlacementColorClasses = (placement?: number): string => {
     return "border-red-600";
 };
 
-// Calculates performance score for an Arena match.
 function calculateArenaPerformanceScore(
     playerStats: MatchParticipantStats,
     allParticipants: MatchParticipantStats[],
@@ -195,10 +196,10 @@ function calculateArenaPerformanceScore(
     else if (kdaRatio >= 3.5) score += 16;
     else if (kdaRatio >= 2.0) score += 12;
     else if (kdaRatio >= 1.0) score += 8;
-    else score += 4;
-    if ((k + a) >= 20) score += 7;
+    else score += 4; 
+    if ((k + a) >= 20) score += 7; 
     else if ((k + a) >= 10) score += 3;
-    if (d === 0 && (k + a) >= 3) score += 3;
+    if (d === 0 && (k + a) >= 3) score += 3; 
 
     const totalDamageDealt = playerStats.totalDamageDealtToChampions ?? 0;
     let maxDamageInGame = 0;
@@ -209,13 +210,13 @@ function calculateArenaPerformanceScore(
     });
     if (maxDamageInGame > 0) {
         const damageRatio = totalDamageDealt / maxDamageInGame;
-        if (damageRatio >= 0.85) score += 10;
+        if (damageRatio >= 0.85) score += 10; 
         else if (damageRatio >= 0.65) score += 7;
         else if (damageRatio >= 0.40) score += 4;
     }
 
     const totalHealing = playerStats.totalHeal ?? 0;
-    const totalShielding = playerStats.totalDamageShieldedOnTeammates ?? 0;
+    const totalShielding = playerStats.totalDamageShieldedOnTeammates ?? 0; 
     const totalSupportStats = totalHealing + totalShielding;
     if (totalSupportStats >= 15000) score += 15;
     else if (totalSupportStats >= 10000) score += 10;
@@ -224,8 +225,6 @@ function calculateArenaPerformanceScore(
     
     return Math.min(Math.max(Math.round(score), 0), 100);
 }
-
-// --- Components ---
 
 interface CircularProgressScoreProps { score: number; isInvalidGame: boolean; size?: number; strokeWidth?: number; hideLabel?: boolean; }
 const CircularProgressScore: React.FC<CircularProgressScoreProps> = ({ score, isInvalidGame, size = 50, strokeWidth = 4, hideLabel = false }) => {
@@ -290,7 +289,7 @@ export function ArenaMatchDetails({
   const arenaTeams: ArenaTeam[] = useMemo(() => {
     const groupedBySubteam: Record<number, MatchParticipantStats[]> = {};
     info.participants.forEach((p: MatchParticipantStats) => {
-        if (p.playerSubteamId) {
+        if (p.playerSubteamId) { 
             if (!groupedBySubteam[p.playerSubteamId]) groupedBySubteam[p.playerSubteamId] = [];
             groupedBySubteam[p.playerSubteamId].push(p);
         } else { 
@@ -300,10 +299,10 @@ export function ArenaMatchDetails({
     return Object.entries(groupedBySubteam)
         .map(([subteamId, members]) => ({ 
             subteamId: parseInt(subteamId), 
-            placement: members[0]?.subteamPlacement ?? 99,
-            members: members.sort((a,b) => a.participantId - b.participantId),
+            placement: members[0]?.subteamPlacement ?? 99, 
+            members: members.sort((a,b) => a.participantId - b.participantId), 
         }))
-        .sort((teamA, teamB) => teamA.placement - teamB.placement);
+        .sort((teamA, teamB) => teamA.placement - teamB.placement); 
   }, [info.participants]);
 
   const performanceScore = useMemo(() => {
@@ -312,6 +311,16 @@ export function ArenaMatchDetails({
   }, [searchedPlayerStats, info.participants, info.gameDuration]);
 
   const isInvalidGameForScore = useMemo(() => info.gameDuration < ARENA_MIN_VALID_GAME_DURATION_FOR_SCORE, [info.gameDuration]);
+  
+  const spell1Details = useMemo(() => {
+    if (!searchedPlayerStats) return null; 
+    return getSummonerSpellDetails(searchedPlayerStats.summoner1Id, currentPatchVersion, summonerSpellData);
+  }, [searchedPlayerStats, currentPatchVersion, summonerSpellData]);
+
+  const spell2Details = useMemo(() => {
+    if (!searchedPlayerStats) return null; 
+    return getSummonerSpellDetails(searchedPlayerStats.summoner2Id, currentPatchVersion, summonerSpellData);
+  }, [searchedPlayerStats, currentPatchVersion, summonerSpellData]);
 
   if (!searchedPlayerStats) {
       return (
@@ -323,7 +332,8 @@ export function ArenaMatchDetails({
       );
   }
 
-  const player = searchedPlayerStats;
+  const player = searchedPlayerStats; 
+
   const gameEndTime = info.gameEndTimestamp || (info.gameCreation + info.gameDuration * 1000);
   const gameModeName = gameModeMap[info.queueId] || info.gameMode?.replace(/_/g, ' ') || "Arena";
   const playerPlacement = player.subteamPlacement;
@@ -332,14 +342,11 @@ export function ArenaMatchDetails({
   const playerItemsRow2 = [player.item3, player.item4, player.item5];
   const playerAugments = [player.playerAugment1, player.playerAugment2, player.playerAugment3, player.playerAugment4].filter((augId): augId is number => !!augId && augId !== 0);
 
-  const isWin = playerPlacement !== undefined && playerPlacement <= 4;
+  const isWin = playerPlacement !== undefined && playerPlacement <= 4; 
   const outcomeBorderColor = getPlacementColorClasses(playerPlacement);
   const outcomeBgGradient = !isWin ? "from-red-900/20 via-slate-900/30 to-slate-950/50" 
                           : (playerPlacement === 1 ? "from-yellow-800/20 via-slate-900/30 to-slate-950/50" 
                           : "from-blue-900/20 via-slate-900/30 to-slate-950/50");
-
-  const spell1Details = useMemo(() => getSummonerSpellDetails(player.summoner1Id, currentPatchVersion, summonerSpellData), [player.summoner1Id, currentPatchVersion, summonerSpellData]);
-  const spell2Details = useMemo(() => getSummonerSpellDetails(player.summoner2Id, currentPatchVersion, summonerSpellData), [player.summoner2Id, currentPatchVersion, summonerSpellData]);
 
   return (
     <TooltipProvider delayDuration={100}>
@@ -358,7 +365,6 @@ export function ArenaMatchDetails({
             >
               <div className="p-3">
                 <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-                  
                   <div className={`flex flex-col items-center justify-center text-center w-[75px] sm:w-[85px] shrink-0 p-1.5 rounded-md ${isWin ? (playerPlacement === 1 ? 'bg-yellow-950/30' : 'bg-blue-950/20') : 'bg-red-950/20'}`}>
                     <span className={`font-bold text-lg ${playerPlacement === 1 ? 'text-yellow-400' : (isWin ? 'text-blue-400' : 'text-red-400')}`}>
                       {getPlacementTextShorthand(playerPlacement)}
@@ -367,7 +373,6 @@ export function ArenaMatchDetails({
                     <div className="text-[10px] text-gray-400">{formatGameDuration(info.gameDuration)}</div>
                     <div className="text-[10px] text-gray-400">{timeAgo(gameEndTime)}</div>
                   </div>
-
                   <div className="flex flex-col items-center shrink-0">
                     <Tooltip>
                         <TooltipTrigger asChild><Avatar className="h-12 w-12 sm:h-14 sm:w-14 border-2 border-slate-600 rounded-md">
@@ -393,8 +398,8 @@ export function ArenaMatchDetails({
                           <p className="text-sm sm:text-base text-gray-400">{getKdaRatio(player.kills,player.deaths,player.assists)}</p>
                       </div>
                       <div className="flex items-center gap-1">
-                          {Array.from({ length: 4 }).map((_, idx) => {
-                              const augId = playerAugments[idx];
+                          {Array.from({ length: 4 }).map((_, idx) => { 
+                              const augId = playerAugments[idx]; 
                               const augmentInfo = arenaAugmentData && augId ? arenaAugmentData[augId] : undefined;
                               const augmentImageUrl = getAugmentImageUrl(augId, arenaAugmentData, currentPatchVersion);
                               return (
@@ -410,9 +415,7 @@ export function ArenaMatchDetails({
                           })}
                       </div>
                   </div>
-
-                  {/* Grouped Spells and Items Block */}
-                  <div className="flex items-center gap-2 p-2 bg-slate-800/60 rounded-md shadow-inner shrink-0 mr-2">
+                  <div className="flex items-center gap-2 p-2 bg-slate-800/60 rounded-md shadow-inner shrink-0 mr-2"> 
                     <div className="flex flex-col gap-1">
                         {spell1Details ? (
                             <Tooltip>
@@ -446,7 +449,7 @@ export function ArenaMatchDetails({
                         <div className="flex gap-0.5">
                             {playerItemsRow1.map((itemId, idx) => {
                                 const imageUrl = getItemImageUrl(itemId, currentPatchVersion);
-                                const itemName = getItemName(itemId);
+                                const itemName = getItemName(itemId); 
                                 return (
                                 <Tooltip key={`player-item-row1-${idx}-${itemId}`}>
                                     <TooltipTrigger asChild><Avatar className="h-7 w-7 rounded-sm bg-slate-700 flex items-center justify-center">
@@ -478,14 +481,10 @@ export function ArenaMatchDetails({
                         </div>
                     </div>
                   </div>
-                  
-                  {/* Performance Score */}
-                  <div className="flex items-center justify-center shrink-0 w-16 md:w-20 ml-auto mr-2">
+                  <div className="flex items-center justify-center shrink-0 w-16 md:w-20 ml-auto mr-2"> 
                        <CircularProgressScore score={performanceScore} isInvalidGame={isInvalidGameForScore} size={48} strokeWidth={4}/>
                   </div>
-
-                  {/* Expand Button */}
-                  <div className="flex items-center pl-1 shrink-0 self-center">
+                  <div className="flex items-center pl-1 shrink-0 self-center"> 
                       <Button variant="ghost" size="icon" className="h-7 w-7 data-[state=open]:bg-slate-700 hover:bg-slate-600 rounded-full text-gray-400 hover:text-gray-200">
                           {isOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                       </Button>
@@ -517,7 +516,7 @@ export function ArenaMatchDetails({
                                         <th className="p-1.5 text-left font-medium text-gray-300">Items</th>
                                     </tr>
                                 </thead>
-                                <tbody>
+                                <tbody>{/* Ensure no whitespace text node here */}
                                     {team.members.map((p: MatchParticipantStats) => (
                                         <tr key={p.puuid} className={`border-t border-slate-700/50 ${p.puuid === searchedPlayerPuuid ? 'bg-blue-900/20' : 'hover:bg-slate-700/10'}`}>
                                             <td className="p-1.5 whitespace-nowrap">
@@ -525,7 +524,7 @@ export function ArenaMatchDetails({
                                                     <Avatar className="h-7 w-7 rounded-md"><AvatarImage src={getChampionSquareAssetUrl(p.championName, currentPatchVersion, championData)} alt={p.championName}/></Avatar>
                                                     <div className="flex flex-col leading-tight">
                                                         <Link href={`/profile/${platformId}/${encodeURIComponent(p.riotIdGameName || p.summonerName)}-${encodeURIComponent(p.riotIdTagline || "")}`} className="hover:text-purple-300 hover:underline transition-colors">
-                                                            <span className="truncate font-medium text-gray-100 max-w-[100px] sm:max-w-[150px]" title={`${p.riotIdGameName || p.summonerName}${p.riotIdTagline ? `#${p.riotIdTagline}`: ''}`}>{p.riotIdGameName || p.summonerName}</span>
+                                                          <span className="truncate font-medium text-gray-100 max-w-[100px] sm:max-w-[150px]" title={`${p.riotIdGameName || p.summonerName}${p.riotIdTagline ? `#${p.riotIdTagline}`: ''}`}>{p.riotIdGameName || p.summonerName}</span>
                                                         </Link>
                                                         {p.riotIdTagline && <span className="text-gray-500 text-[9px]">#{p.riotIdTagline}</span>}
                                                     </div>
@@ -569,7 +568,7 @@ export function ArenaMatchDetails({
                                             </td>
                                         </tr>
                                     ))}
-                                </tbody>
+                                </tbody>{/* Ensure no whitespace text node here */}
                             </table>
                         </div>
                     </CardContent>

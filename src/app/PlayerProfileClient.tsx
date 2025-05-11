@@ -79,8 +79,8 @@ export function PlayerProfileClient({ currentPatchVersion }: PlayerProfileClient
     },
     {
         enabled: isInputValidForSearch && showSuggestions, 
-        staleTime: 60 * 1000,
-        gcTime: 5 * 60 * 1000,
+        staleTime: 60 * 1000, // 1 minute
+        gcTime: 5 * 60 * 1000, // 5 minutes
         refetchOnWindowFocus: false,
     }
   );
@@ -103,6 +103,7 @@ export function PlayerProfileClient({ currentPatchVersion }: PlayerProfileClient
       if (!isInputValidForSearch) {
         setShowSuggestions(false); 
       }
+      // Invalidate suggestions when region changes or input becomes valid/invalid for search
       queryClient.invalidateQueries({ queryKey: searchSuggestionsOptions.queryKey });
     }, [selectedRegion, isInputValidForSearch, queryClient, searchSuggestionsOptions.queryKey]);
 
@@ -110,7 +111,8 @@ export function PlayerProfileClient({ currentPatchVersion }: PlayerProfileClient
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setRiotIdInput(value);
-    setFormError(null);
+    setFormError(null); // Clear previous errors
+    // Show suggestions if the part before '#' is >= 2 chars and there's no '#' yet
     setShowSuggestions(value.split('#')[0].trim().length >= 2 && !value.includes('#'));
   };
 
@@ -250,7 +252,7 @@ export function PlayerProfileClient({ currentPatchVersion }: PlayerProfileClient
                     <li className="px-4 py-3 text-gray-400 flex items-center"> <Loader2 className="h-4 w-4 animate-spin mr-2" /> Loading suggestions... </li>
                 )}
                 {!isLoadingSuggestions && suggestions && suggestions.length === 0 && searchInputQuery.length > 0 && (
-                     <li className="px-4 py-3 text-gray-400 text-sm italic">No recent players found matching "{searchInputQuery}".</li>
+                     <li className="px-4 py-3 text-gray-400 text-sm italic">No recent players found matching &quot;{searchInputQuery}&quot;.</li>
                 )}
                 {!isLoadingSuggestions && suggestions && suggestions.map((suggestion: RiotIdSuggestion) => {
                     return (

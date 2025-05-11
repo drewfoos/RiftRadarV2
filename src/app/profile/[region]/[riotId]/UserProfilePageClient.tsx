@@ -4,7 +4,7 @@
 import { useTRPC } from '@/trpc/client';
 import { useInfiniteQuery, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
-import { useMemo, useState } from 'react'; // Removed useEffect as it's not directly used
+import { useMemo, useState } from 'react'; 
 
 import type { AppRouter } from '@/trpc/routers/_app';
 import type {
@@ -14,8 +14,6 @@ import type {
   MatchDetailsData
 } from '@/types/ddragon';
 import type { TRPCClientErrorLike } from '@trpc/client';
-// SpectatorV5 types are no longer needed here as live game logic moves to its own page
-// import type { CurrentGameInfo } from '@/types/spectatorV5'; 
 
 // Import Child Components
 import { ChampionMasterySection } from './ChampionMasterySection';
@@ -24,15 +22,10 @@ import { MatchHistorySection } from './MatchHistorySection';
 import { PlayedWithCard } from './PlayedWithCard';
 import { ProfileHeader } from './ProfileHeader';
 import { RankedStatsCard } from './RankedStatsCard';
-// LiveGameCard is no longer rendered by this component
-// import { LiveGameCard } from './LiveGameCard'; 
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from '@/components/ui/button';
 import { Info, Loader2, RefreshCw, Search, ShieldAlert, UserX } from 'lucide-react';
-
-// Helper functions are likely used within child components, so direct imports here might not be needed
-// unless UserProfilePageClient itself uses them, which it currently doesn't after simplification.
 
 // --- Constants ---
 const DEFAULT_MATCH_COUNT_PER_PAGE = 10;
@@ -50,10 +43,13 @@ const QUEUE_FILTERS = {
 type QueueFilterKey = keyof typeof QUEUE_FILTERS;
 type MatchFilterType = typeof QUEUE_FILTERS[QueueFilterKey]['type'];
 
-interface MatchIdPage {
-    items: string[];
-    nextCursor?: number | null | undefined;
-}
+// The 'MatchIdPage' interface was defined but never used.
+// It's commented out here to resolve the ESLint error.
+// If it's needed in the future, it can be uncommented.
+// interface MatchIdPage {
+//     items: string[];
+//     nextCursor?: number | null | undefined;
+// }
 
 export interface ChampionPerformanceStat { championId: number; championName: string; championNameId?: string; games: number; wins: number; losses: number; kills: number; deaths: number; assists: number; }
 export interface PlayedWithStat { puuid: string; gameName: string; tagLine: string; games: number; wins: number; profileIcon: number | null; }
@@ -78,8 +74,6 @@ export function UserProfilePageClient({
   const queryClient = useQueryClient();
   const router = useRouter();
 
-  // activeTab state is removed, as ProfileHeader tabs are now direct links.
-  // This component will always render the "Overview" content.
   const [selectedQueueFilterKey, setSelectedQueueFilterKey] = useState<QueueFilterKey>('ALL');
   const currentQueueFilter = QUEUE_FILTERS[selectedQueueFilterKey];
 
@@ -136,8 +130,6 @@ export function UserProfilePageClient({
   });
   const isLoadingMatchDetails = useMemo(() => matchDetailsQueries.some(q => q.isLoading), [matchDetailsQueries]);
   const loadedMatchDetails = useMemo(() => matchDetailsQueries.filter(q => q.isSuccess && q.data).map(q => q.data as MatchDetailsData), [matchDetailsQueries]);
-
-  // Removed Live Game Data Query - this will be on the /live page
 
   // --- Derived Data & Stats Calculations ---
   const soloRank = useMemo(() => rankedEntries?.find((entry: LeagueEntryDTO) => entry.queueType === 'RANKED_SOLO_5x5'), [rankedEntries]);
@@ -219,7 +211,6 @@ export function UserProfilePageClient({
   const typedRankedError = rankedError as TRPCClientErrorLike<AppRouter> | null;
   const typedMasteryError = masteryError as TRPCClientErrorLike<AppRouter> | null;
   const typedMatchIdsError = matchIdsError as TRPCClientErrorLike<AppRouter> | null;
-  // typedLiveGameError is removed
 
   // --- Event Handlers ---
   const handleFilterSelect = (newFilterKey: string) => {
@@ -247,7 +238,7 @@ export function UserProfilePageClient({
         <div className="flex flex-col items-center justify-center min-h-[calc(100vh-10rem)] text-center p-4">
             <UserX className="h-20 w-20 text-purple-400 mb-6" />
             <h2 className="text-3xl font-bold mb-3 text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-500"> Player Not Found </h2>
-            <p className="text-gray-300 max-w-md mb-8"> We couldn't find a player with the Riot ID <strong className="text-white">{gameName}#{tagLine}</strong> on the <strong className="text-white">{region.toUpperCase()}</strong> server. Please double-check the spelling, tag, and selected region. </p>
+            <p className="text-gray-300 max-w-md mb-8"> We couldn&apos;t find a player with the Riot ID <strong className="text-white">{gameName}#{tagLine}</strong> on the <strong className="text-white">{region.toUpperCase()}</strong> server. Please double-check the spelling, tag, and selected region. </p>
             <Button onClick={() => router.push('/')} variant="outline" className="dark:text-slate-200 dark:border-purple-500/50 dark:hover:bg-purple-700/20 dark:bg-gray-800/80"> <Search className="mr-2 h-4 w-4" /> Search Again </Button>
         </div>
       );
@@ -277,7 +268,6 @@ export function UserProfilePageClient({
   }
 
   // --- Render Logic ---
-  // renderActiveTabContent function is removed. This component now always renders the "Overview" layout.
   return (
     <div className="w-full">
         <ProfileHeader
@@ -287,10 +277,8 @@ export function UserProfilePageClient({
             region={region}
             currentPatchVersion={currentPatchVersion}
             profileError={typedProfileError}
-            // activeTab and setActiveTab props are removed
         />
 
-        {/* This is now the "Overview" content, displayed by default */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex flex-col lg:flex-row gap-6 lg:gap-8">
             <aside className="w-full lg:w-1/4 shrink-0 space-y-6">

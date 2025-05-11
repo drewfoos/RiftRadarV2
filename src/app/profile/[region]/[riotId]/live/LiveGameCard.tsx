@@ -302,7 +302,6 @@ export function LiveGameCard({
 
   const [team1PlayerOrder, setTeam1PlayerOrder] = useState<CurrentGameInfo['participants'][0][]>([]);
   const [team2PlayerOrder, setTeam2PlayerOrder] = useState<CurrentGameInfo['participants'][0][]>([]);
-
   const [summonerInputsForRankedQuery, setSummonerInputsForRankedQuery] = useState<Array<{summonerId: string; platformId: string}>>([]);
 
   type BulkRankedData = Record<string, LeagueEntryDTO[] | null>;
@@ -327,21 +326,25 @@ export function LiveGameCard({
       const newTeam1Participants = liveGameData.participants.filter(p => p.teamId === 100).slice(0,5);
       const newTeam2Participants = liveGameData.participants.filter(p => p.teamId === 200).slice(0,5);
 
-      // Only update order if the actual set of participants for a team changes.
-      // This helps preserve user's dragged order if liveGameData updates but participants are the same.
       const newTeam1Puids = newTeam1Participants.map(p => p.puuid).sort().join(',');
-      const currentTeam1Puids = team1PlayerOrder.map(p => p.puuid).sort().join(',');
-      
-      if (team1PlayerOrder.length !== newTeam1Participants.length || newTeam1Puids !== currentTeam1Puids) {
-        setTeam1PlayerOrder(newTeam1Participants);
-      }
+      // Use a functional update for team1PlayerOrder to get the latest state if needed,
+      // or ensure the comparison logic is robust.
+      setTeam1PlayerOrder(prevOrder => {
+        const currentTeam1Puids = prevOrder.map(p => p.puuid).sort().join(',');
+        if (prevOrder.length !== newTeam1Participants.length || newTeam1Puids !== currentTeam1Puids) {
+          return newTeam1Participants;
+        }
+        return prevOrder;
+      });
 
       const newTeam2Puids = newTeam2Participants.map(p => p.puuid).sort().join(',');
-      const currentTeam2Puids = team2PlayerOrder.map(p => p.puuid).sort().join(',');
-
-      if (team2PlayerOrder.length !== newTeam2Participants.length || newTeam2Puids !== currentTeam2Puids) {
-        setTeam2PlayerOrder(newTeam2Participants);
-      }
+      setTeam2PlayerOrder(prevOrder => {
+        const currentTeam2Puids = prevOrder.map(p => p.puuid).sort().join(',');
+        if (prevOrder.length !== newTeam2Participants.length || newTeam2Puids !== currentTeam2Puids) {
+          return newTeam2Participants;
+        }
+        return prevOrder;
+      });
       
       const newSummonerInputsForRanked = liveGameData.participants
         .filter(p => !p.bot && p.summonerId) 
@@ -350,18 +353,26 @@ export function LiveGameCard({
           platformId: liveGameData.platformId, 
         }));
       
-      // Only update if the inputs actually change to avoid unnecessary query re-evaluations
-      if (JSON.stringify(newSummonerInputsForRanked) !== JSON.stringify(summonerInputsForRankedQuery)) {
-        setSummonerInputsForRankedQuery(newSummonerInputsForRanked);
-      }
+      // Use functional update for summonerInputsForRankedQuery as well
+      setSummonerInputsForRankedQuery(prevInputs => {
+        if (JSON.stringify(newSummonerInputsForRanked) !== JSON.stringify(prevInputs)) {
+          return newSummonerInputsForRanked;
+        }
+        return prevInputs;
+      });
 
     } else {
       setTeam1PlayerOrder([]);
       setTeam2PlayerOrder([]);
       setSummonerInputsForRankedQuery([]); 
     }
-  // Only depend on liveGameData for this effect.
-  // The internal logic handles whether to update the order states.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // Reason: The states team1PlayerOrder, team2PlayerOrder, and summonerInputsForRankedQuery
+  // are intentionally not in the dependency array. This effect's purpose is to synchronize these
+  // states based *only* on changes to liveGameData. The internal logic within the effect
+  // (comparing current PUIDs/inputs with new ones) prevents unnecessary state updates if the
+  // derived data from liveGameData hasn't actually changed, thus avoiding an infinite loop.
+  // Adding them would cause the loop this comment aims to prevent.
   }, [liveGameData]); 
 
 
@@ -424,7 +435,6 @@ export function LiveGameCard({
         setTeam1PlayerOrder((items) => {
             const oldIndex = items.findIndex(p => p.puuid === activeId);
             const newIndex = items.findIndex(p => p.puuid === overId);
-            // Ensure both items are actually in this list before moving
             if (items.some(p=>p.puuid === activeId) && items.some(p=>p.puuid === overId) && oldIndex !== -1 && newIndex !== -1) {
               return arrayMove(items, oldIndex, newIndex);
             }
@@ -456,12 +466,12 @@ export function LiveGameCard({
   const team1Bans = bannedChampions.filter(b => b.teamId === 100);
   const team2Bans = bannedChampions.filter(b => b.teamId === 200);
 
-  const renderTeamBans = (bans: SpectatorBannedChampion[], teamId: number) => (
-    <div className={`flex flex-wrap justify-center items-center gap-2 mb-4 p-2 rounded-md shadow-md ${teamId === 100 ? 'bg-blue-900/40' : 'bg-red-900/40'}`}>
-      <ShieldX size={20} className={`${teamId === 100 ? 'text-blue-400' : 'text-red-400'} mr-2 flex-shrink-0`} />
+  const renderTeamBans = (bans: SpectatorBannedChampion[], teamColorId: number) => (
+    <div className={`flex flex-wrap justify-center items-center gap-2 mb-4 p-2 rounded-md shadow-md ${teamColorId === 100 ? 'bg-blue-900/40' : 'bg-red-900/40'}`}>
+      <ShieldX size={20} className={`${teamColorId === 100 ? 'text-blue-400' : 'text-red-400'} mr-2 flex-shrink-0`} />
       {bans.length > 0 ? bans.map(ban => {
         const championDetails = ddragonData.championData ? Object.values(ddragonData.championData).find(c => c.key === String(ban.championId)) : undefined;
-        if (ban.championId === -1) {
+        if (ban.championId === -1) { 
           return ( <div key={`no-ban-${ban.pickTurn}`} title="No Ban" className="flex items-center justify-center w-[28px] h-[28px] bg-slate-700/50 rounded-md border-2 border-slate-600"> <Ban size={16} className="text-slate-500" /> </div> );
         }
         return ( <div key={`ban-${ban.championId}-${ban.pickTurn}`} title={championDetails?.name || `ID: ${ban.championId}`}> <Image src={getChampionIconUrl(championDetails?.id, currentPatchVersion)} alt={championDetails?.name || 'Banned'} width={28} height={28} className="rounded-md opacity-75 border-2 border-slate-700" onError={(e) => { (e.target as HTMLImageElement).src = "https://placehold.co/28x28/4b5563/9ca3af?text=B"; }}/> </div> );
@@ -469,7 +479,7 @@ export function LiveGameCard({
     </div>
   );
   
-  const renderPlayerRow = (teamPlayerOrder: CurrentGameInfo['participants'][0][], teamId: number) => (
+  const renderPlayerRow = (teamPlayerOrder: CurrentGameInfo['participants'][0][], _teamId: number) => ( 
     <SortableContext items={teamPlayerOrder.map(p => p.puuid)} strategy={rectSortingStrategy}>
       <div className="flex flex-wrap justify-center gap-3 md:gap-4">
         {teamPlayerOrder.map(p => {

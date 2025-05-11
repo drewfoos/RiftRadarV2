@@ -23,7 +23,7 @@ export const appRouter = router({
         text: z.string().optional(),
       }).optional(), // Input can be an object with an optional 'text' field, or the input can be omitted entirely
     )
-    .query(({ input, ctx }) => {
+    .query(({ input }) => {
       // You can access context (db, redis) here if needed:
       // console.log('Context in hello router:', ctx.db, ctx.redis);
 

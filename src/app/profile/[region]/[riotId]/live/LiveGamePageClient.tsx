@@ -12,7 +12,7 @@ import type { TRPCClientErrorLike } from '@trpc/client';
 
 // Import Child Components
 import { ProfileHeader } from '../ProfileHeader'; // Path goes up one level
-import { LiveGameCard } from './LiveGameCard'; // Path goes up one level
+import { LiveGameCard } from './LiveGameCard'; 
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from '@/components/ui/button';
@@ -110,7 +110,7 @@ export function LiveGamePageClient({
               <UserX className="h-20 w-20 text-purple-400 mb-6 mx-auto" />
               <h2 className="text-3xl font-bold mb-3 text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-500">Player Not Found</h2>
               <p className="text-gray-300 max-w-md mb-8 mx-auto">
-                We couldn't find a player with the Riot ID <strong className="text-white">{gameName}#{tagLine}</strong> on the <strong className="text-white">{region.toUpperCase()}</strong> server.
+                We couldn&apos;t find a player with the Riot ID <strong className="text-white">{gameName}#{tagLine}</strong> on the <strong className="text-white">{region.toUpperCase()}</strong> server.
               </p>
               <Button onClick={() => router.push('/')} variant="outline" className="dark:text-slate-200 dark:border-purple-500/50 dark:hover:bg-purple-700/20 dark:bg-gray-800/80">
                 <Search className="mr-2 h-4 w-4" /> Search Again

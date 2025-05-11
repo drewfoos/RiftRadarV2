@@ -17,8 +17,7 @@ import {
     BarChartHorizontalBig,
     BookOpen,
     ChevronDown, ChevronUp,
-    CircleSlash // Added CircleSlash
-    ,
+    CircleSlash,
     Diamond,
     Eye,
     Flame,
@@ -77,8 +76,8 @@ const defaultQueueIdToName: Record<number, string> = {
 };
 
 // --- Helper Functions ---
-function getItemImageUrl(itemId: number, patchVersion: string): string | null { // Returns string or null
-  if (!itemId || itemId === 0) return null; // Return null for empty slots
+function getItemImageUrl(itemId: number, patchVersion: string): string | null {
+  if (!itemId || itemId === 0) return null;
   return `${DDRAGON_BASE_URL}/${patchVersion}/img/item/${itemId}.png`;
 }
 function getItemName(itemId: number, itemData?: ClassicMatchDetailsProps['itemData']): string {
@@ -170,7 +169,8 @@ const defaultStatPerkDetails = {
 };
 
 
-function getStatPerkIconUrl(perkId: number | undefined, type?: 'offense' | 'flex' | 'defense'): string {
+// Removed 'type' parameter as it was unused
+function getStatPerkIconUrl(perkId: number | undefined): string {
     if (perkId !== undefined) {
         const detail = statPerkDetailsById[perkId];
         if (detail?.iconPath) {
@@ -266,8 +266,8 @@ function calculatePerformanceScore(
     } else {
         if (vspm >= 0.8) score += 11; else if (vspm >= 0.5) score += 5;
     }
-    const teamKills = teamTotalKills > 0 ? teamTotalKills : 1;
-    const kp = (((playerStats.kills ?? 0) + (playerStats.assists ?? 0)) / teamKills) * 100;
+    const teamKillsValue = teamTotalKills > 0 ? teamTotalKills : 1; // Renamed to avoid conflict
+    const kp = (((playerStats.kills ?? 0) + (playerStats.assists ?? 0)) / teamKillsValue) * 100;
     if (kp >= 70) score += 16; else if (kp >= 55) score += 11; else if (kp >= 40) score += 8; else if (kp >= 25) score += 4;
 
     if (playerStats.win) {
@@ -395,7 +395,7 @@ export function ClassicMatchDetails({
   const [runeTooltipPosition, setRuneTooltipPosition] = useState({ top: 0, left: 0 });
   const runeHoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-
+  // --- Hooks are now at the top level ---
   const searchedPlayerStats = useMemo(() => {
     return matchDetails.info?.participants?.find((p: MatchParticipantStats) => p.puuid === searchedPlayerPuuid);
   }, [matchDetails.info?.participants, searchedPlayerPuuid]);
@@ -406,46 +406,74 @@ export function ClassicMatchDetails({
            ? true : false;
   }, [matchDetails.info?.participants, matchDetails.info?.gameDuration]);
 
-
-  const { teamAverageScores, teamPerformanceTag } = useMemo(() => {
-    if (!matchDetails.info?.participants || !matchDetails.info.teams || isGameRemake) {
-      return { teamAverageScores: {}, teamPerformanceTag: null };
+  const teamPerformanceTag = useMemo(() => {
+    // Check dependencies directly, as this hook is called before the early return.
+    if (!matchDetails.info?.participants || !matchDetails.info.teams || isGameRemake || !searchedPlayerStats) {
+      return null;
     }
     const scoresByTeam: Record<number, number[]> = { 100: [], 200: [] };
     matchDetails.info.participants.forEach(p => {
       const pTeam = matchDetails.info.teams.find(t => t.teamId === p.teamId);
       const pTeamTotalKills = pTeam?.objectives.champion.kills ?? 0;
-      const score = calculatePerformanceScore(p, pTeamTotalKills, matchDetails.info.gameDuration, isGameRemake);
+      // Ensure gameDuration is valid before calculating score
+      const gameDuration = matchDetails.info.gameDuration ?? 0;
+      const score = calculatePerformanceScore(p, pTeamTotalKills, gameDuration, isGameRemake);
       if (p.teamId === 100 || p.teamId === 200) {
         scoresByTeam[p.teamId].push(score);
       }
     });
+
     const avgScores: Record<number, number> = {};
     if (scoresByTeam[100].length > 0) { avgScores[100] = scoresByTeam[100].reduce((a, b) => a + b, 0) / scoresByTeam[100].length; }
     if (scoresByTeam[200].length > 0) { avgScores[200] = scoresByTeam[200].reduce((a, b) => a + b, 0) / scoresByTeam[200].length; }
+
     let tag: string | null = null;
-    if (searchedPlayerStats) {
-        const searchedPlayerTeamId = searchedPlayerStats.teamId;
-        const opponentTeamId = searchedPlayerTeamId === 100 ? 200 : 100;
-        const searchedPlayerTeamAvg = avgScores[searchedPlayerTeamId] || 0;
-        const opponentTeamAvg = avgScores[opponentTeamId] || 0;
-        if (searchedPlayerTeamAvg > opponentTeamAvg + 7) tag = "Better Team";
-        else if (opponentTeamAvg > searchedPlayerTeamAvg + 7) tag = "Worse Team";
-        else if (searchedPlayerTeamAvg > 0 || opponentTeamAvg > 0) tag = "Even Match";
-    }
-    return { teamAverageScores: avgScores, teamPerformanceTag: tag };
+    // searchedPlayerStats is confirmed non-null by the initial check in this hook
+    const searchedPlayerTeamId = searchedPlayerStats.teamId;
+    const opponentTeamId = searchedPlayerTeamId === 100 ? 200 : 100;
+    const searchedPlayerTeamAvg = avgScores[searchedPlayerTeamId] || 0;
+    const opponentTeamAvg = avgScores[opponentTeamId] || 0;
+
+    if (searchedPlayerTeamAvg > opponentTeamAvg + 7) tag = "Better Team";
+    else if (opponentTeamAvg > searchedPlayerTeamAvg + 7) tag = "Worse Team";
+    else if (searchedPlayerTeamAvg > 0 || opponentTeamAvg > 0) tag = "Even Match";
+    
+    return tag;
   }, [matchDetails.info, isGameRemake, searchedPlayerStats]);
 
+  const performanceScoreForSearchedPlayer = useMemo(() => {
+    if (!searchedPlayerStats || !matchDetails.info?.gameDuration) return 0;
+    const playerTeamDto = matchDetails.info.teams.find(team => team.teamId === searchedPlayerStats.teamId);
+    const pTeamTotalKills = playerTeamDto?.objectives.champion.kills ?? 0;
+    return calculatePerformanceScore(searchedPlayerStats, pTeamTotalKills, matchDetails.info.gameDuration, isGameRemake);
+  }, [searchedPlayerStats, matchDetails.info, isGameRemake]); // matchDetails.info contains gameDuration and teams
+
+  const spell1Details = useMemo(() => {
+    if (!searchedPlayerStats) return null;
+    return getSummonerSpellDetails(searchedPlayerStats.summoner1Id, currentPatchVersion, summonerSpellData);
+  }, [searchedPlayerStats, currentPatchVersion, summonerSpellData]);
+
+  const spell2Details = useMemo(() => {
+    if (!searchedPlayerStats) return null;
+    return getSummonerSpellDetails(searchedPlayerStats.summoner2Id, currentPatchVersion, summonerSpellData);
+  }, [searchedPlayerStats, currentPatchVersion, summonerSpellData]);
+
+  const highlightTag = useMemo(() => {
+    if (!searchedPlayerStats || !matchDetails.info?.gameDuration) return null;
+    return getHighlightTag(searchedPlayerStats, matchDetails.info.gameDuration, isGameRemake);
+  }, [searchedPlayerStats, matchDetails.info?.gameDuration, isGameRemake]);
+
+
+  // --- Early return: After this, searchedPlayerStats and matchDetails.info are effectively non-null ---
   if (!searchedPlayerStats || !matchDetails.info) {
-    return ( <Alert variant="destructive" className="mb-3"> <ShieldAlert className="h-4 w-4" /> <AlertTitle>Player or Match Data Error</AlertTitle> <AlertDescription>Searched player's data or essential match details not found.</AlertDescription> </Alert> );
+    return ( <Alert variant="destructive" className="mb-3"> <ShieldAlert className="h-4 w-4" /> <AlertTitle>Player or Match Data Error</AlertTitle> <AlertDescription>Searched player&apos;s data or essential match details not found.</AlertDescription> </Alert> );
   }
 
-  const { info } = matchDetails;
-  const player = searchedPlayerStats;
+  // --- Now you can safely use searchedPlayerStats and matchDetails.info as non-null ---
+  const player = searchedPlayerStats; // player is now guaranteed non-null
+  const info = matchDetails.info;     // info is now guaranteed non-null
 
-  const playerTeamDto = info.teams.find(team => team.teamId === player.teamId);
-  const teamTotalKills = playerTeamDto?.objectives.champion.kills ?? 0;
-
+  // Variables that depend on the now-guaranteed player and info
   const itemsRow1 = [player.item0, player.item1, player.item2, player.item6];
   const itemsRow2 = [player.item3, player.item4, player.item5];
 
@@ -484,18 +512,8 @@ export function ClassicMatchDetails({
       outcomeBgGradient = "from-slate-800/20 via-slate-900/30 to-slate-950/50";
   }
 
-
-  const performanceScoreForSearchedPlayer = useMemo(() =>
-    calculatePerformanceScore(player, teamTotalKills, info.gameDuration, isGameRemake),
-  [player, teamTotalKills, info.gameDuration, isGameRemake]);
-
-  const spell1Details = useMemo(() => getSummonerSpellDetails(player.summoner1Id, currentPatchVersion, summonerSpellData), [player.summoner1Id, currentPatchVersion, summonerSpellData]);
-  const spell2Details = useMemo(() => getSummonerSpellDetails(player.summoner2Id, currentPatchVersion, summonerSpellData), [player.summoner2Id, currentPatchVersion, summonerSpellData]);
-
   const gameDurationMinutes = info.gameDuration / 60;
   const csPerMinute = gameDurationMinutes > 0 ? ((player.totalMinionsKilled + player.neutralMinionsKilled) / gameDurationMinutes).toFixed(1) : "0.0";
-
-  const highlightTag = useMemo(() => getHighlightTag(player, info.gameDuration, isGameRemake), [player, info.gameDuration, isGameRemake]);
 
   const handleDetailedRuneHoverEnter = (event: React.MouseEvent<HTMLDivElement>, participantPerks?: PerksDto) => {
     if (runeHoverTimeoutRef.current) clearTimeout(runeHoverTimeoutRef.current);
@@ -626,13 +644,13 @@ export function ClassicMatchDetails({
                                 <AvatarImage src={spell1Details.imageUrl} alt={spell1Details.name} />
                             </Avatar></TooltipTrigger>
                              <TooltipContent className="bg-black text-white border-slate-700 text-xs p-1.5 rounded-md shadow-lg max-w-xs"> <p className="font-semibold mb-0.5">{spell1Details.name}</p> <p className="text-slate-300" dangerouslySetInnerHTML={{ __html: spell1Details.description }}/> </TooltipContent> </Tooltip> )
-                             : (<Avatar className="h-6 w-6 rounded-sm bg-slate-700 flex items-center justify-center"><CircleSlash className="h-4 w-4 text-slate-500" /></Avatar>) }
+                                : (<Avatar className="h-6 w-6 rounded-sm bg-slate-700 flex items-center justify-center"><CircleSlash className="h-4 w-4 text-slate-500" /></Avatar>) }
                         {spell2Details ? ( <Tooltip>
                             <TooltipTrigger asChild><Avatar className="h-6 w-6 rounded-sm bg-slate-700">
                                 <AvatarImage src={spell2Details.imageUrl} alt={spell2Details.name} />
                             </Avatar></TooltipTrigger>
                              <TooltipContent className="bg-black text-white border-slate-700 text-xs p-1.5 rounded-md shadow-lg max-w-xs"> <p className="font-semibold mb-0.5">{spell2Details.name}</p> <p className="text-slate-300" dangerouslySetInnerHTML={{ __html: spell2Details.description }}/> </TooltipContent> </Tooltip> )
-                             : (<Avatar className="h-6 w-6 rounded-sm bg-slate-700 flex items-center justify-center"><CircleSlash className="h-4 w-4 text-slate-500" /></Avatar>) }
+                                : (<Avatar className="h-6 w-6 rounded-sm bg-slate-700 flex items-center justify-center"><CircleSlash className="h-4 w-4 text-slate-500" /></Avatar>) }
                     </div>
                     <div className="flex flex-col items-center gap-1 cursor-default" onMouseEnter={(e) => handleDetailedRuneHoverEnter(e, player.perks)} onMouseLeave={handleDetailedRuneHoverLeave} >
                         {keystoneId && <Avatar className="h-6 w-6 rounded-full border border-yellow-600/50 bg-black/30"> <AvatarImage src={getRuneOrTreeIconUrl(keystoneId, currentPatchVersion, runeTreeData)} /> </Avatar> }
@@ -800,9 +818,9 @@ export function ClassicMatchDetails({
                     </div>
                 )}
                 {activeTab === "runes" && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4"> {/* Increased gap */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
                         {[100, 200].map(teamId => (
-                            <div key={`runes-team-${teamId}`} className="space-y-4"> {/* Increased space between player cards */}
+                            <div key={`runes-team-${teamId}`} className="space-y-4">
                                 <h4 className={`text-base font-semibold mb-3 pb-1.5 border-b border-slate-600 ${teamId === 100 ? 'text-blue-400 border-blue-600' : 'text-red-400 border-red-600'}`}>
                                     {teamId === 100 ? 'Blue Team' : 'Red Team'}
                                 </h4>
@@ -872,7 +890,7 @@ export function ClassicMatchDetails({
                                                                 <Tooltip key={`stat-${p.puuid}-${perkId}-${i}`}>
                                                                     <TooltipTrigger asChild>
                                                                         <Avatar className="h-5 w-5 bg-slate-800/70 p-0.5 rounded-full">
-                                                                            <AvatarImage src={getStatPerkIconUrl(perkId, type)} alt={getStatPerkName(perkId, type)} />
+                                                                            <AvatarImage src={getStatPerkIconUrl(perkId)} alt={getStatPerkName(perkId, type)} />
                                                                             <AvatarFallback className="text-[9px]">{getStatPerkName(perkId, type)[0]}</AvatarFallback>
                                                                         </Avatar>
                                                                     </TooltipTrigger>
