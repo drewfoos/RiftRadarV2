@@ -327,8 +327,6 @@ export function LiveGameCard({
       const newTeam2Participants = liveGameData.participants.filter(p => p.teamId === 200).slice(0,5);
 
       const newTeam1Puids = newTeam1Participants.map(p => p.puuid).sort().join(',');
-      // Use a functional update for team1PlayerOrder to get the latest state if needed,
-      // or ensure the comparison logic is robust.
       setTeam1PlayerOrder(prevOrder => {
         const currentTeam1Puids = prevOrder.map(p => p.puuid).sort().join(',');
         if (prevOrder.length !== newTeam1Participants.length || newTeam1Puids !== currentTeam1Puids) {
@@ -353,7 +351,6 @@ export function LiveGameCard({
           platformId: liveGameData.platformId, 
         }));
       
-      // Use functional update for summonerInputsForRankedQuery as well
       setSummonerInputsForRankedQuery(prevInputs => {
         if (JSON.stringify(newSummonerInputsForRanked) !== JSON.stringify(prevInputs)) {
           return newSummonerInputsForRanked;
@@ -366,13 +363,8 @@ export function LiveGameCard({
       setTeam2PlayerOrder([]);
       setSummonerInputsForRankedQuery([]); 
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  // Reason: The states team1PlayerOrder, team2PlayerOrder, and summonerInputsForRankedQuery
-  // are intentionally not in the dependency array. This effect's purpose is to synchronize these
-  // states based *only* on changes to liveGameData. The internal logic within the effect
-  // (comparing current PUIDs/inputs with new ones) prevents unnecessary state updates if the
-  // derived data from liveGameData hasn't actually changed, thus avoiding an infinite loop.
-  // Adding them would cause the loop this comment aims to prevent.
+  // The eslint-disable directive below is removed as it's no longer needed
+  // because the dependencies are correctly handled by the functional updates.
   }, [liveGameData]); 
 
 
@@ -479,7 +471,8 @@ export function LiveGameCard({
     </div>
   );
   
-  const renderPlayerRow = (teamPlayerOrder: CurrentGameInfo['participants'][0][], _teamId: number) => ( 
+  // Removed unused '_teamId' parameter from renderPlayerRow
+  const renderPlayerRow = (teamPlayerOrder: CurrentGameInfo['participants'][0][]) => ( 
     <SortableContext items={teamPlayerOrder.map(p => p.puuid)} strategy={rectSortingStrategy}>
       <div className="flex flex-wrap justify-center gap-3 md:gap-4">
         {teamPlayerOrder.map(p => {
@@ -527,12 +520,12 @@ export function LiveGameCard({
         <CardContent className="space-y-6 px-2 py-4 md:px-4">
           <div>
             {renderTeamBans(team1Bans, 100)}
-            {renderPlayerRow(team1PlayerOrder, 100)} 
+            {renderPlayerRow(team1PlayerOrder)} 
           </div>
           <hr className="border-slate-700/50 my-4" />
           <div>
             {renderTeamBans(team2Bans, 200)}
-            {renderPlayerRow(team2PlayerOrder, 200)} 
+            {renderPlayerRow(team2PlayerOrder)} 
           </div>
         </CardContent>
       </Card>

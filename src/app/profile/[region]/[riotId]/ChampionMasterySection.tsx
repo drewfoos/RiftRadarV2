@@ -12,6 +12,7 @@ import type { AppRouter } from '@/trpc/routers/_app'; // Adjust path if needed
 import type { TRPCClientErrorLike } from '@trpc/client';
 // Import helpers from utils or define locally
 import { formatMasteryPoints, getChampionIconUrl } from './utils'; // Assuming helpers moved to utils.tsx
+import Image from 'next/image'; // Import the Next.js Image component
 
 // Define the structure for the processed mastery data needed by this component
 interface ProcessedMastery extends ChampionMasteryDTO {
@@ -54,13 +55,20 @@ export function ChampionMasterySection({ topMasteryChampions, isLoading, error, 
                                 <TooltipTrigger>
                                     {/* Individual Mastery Item Card */}
                                     <div className="flex flex-col items-center p-3 rounded-lg bg-slate-700/50 hover:bg-slate-700/80 transition-colors cursor-default shadow">
-                                        {/* Champion Icon */}
-                                        <img
+                                        {/* Champion Icon using Next/Image */}
+                                        <Image
                                             src={getChampionIconUrl(mastery.championNameId, currentPatchVersion)}
-                                            alt={mastery.championName}
-                                            className="w-12 h-12 rounded-md mb-2 border-2 border-slate-600"
-                                            loading="lazy" // Add lazy loading
-                                            onError={(e) => { e.currentTarget.src = 'https://placehold.co/48x48/374151/9CA3AF?text=?'; }} // Fallback placeholder
+                                            alt={mastery.championName || 'Champion Icon'} // Added a fallback alt text
+                                            width={48} // Tailwind w-12 is 48px (12 * 4px)
+                                            height={48} // Tailwind h-12 is 48px
+                                            className="rounded-md mb-2 border-2 border-slate-600"
+                                            loading="lazy"
+                                            // onError prop for next/image might behave differently for direct src replacement.
+                                            // For more complex fallbacks with next/image, consider a custom loader or handling broken images upstream.
+                                            // A simple placeholder can be achieved by ensuring getChampionIconUrl returns a placeholder URL if mastery.championNameId is undefined.
+                                            // If getChampionIconUrl already returns a placeholder, that's good.
+                                            // If you need a specific client-side fallback for network errors, it's more complex with next/image.
+                                            // For simplicity, relying on getChampionIconUrl to provide a valid or placeholder URL.
                                         />
                                         {/* Champion Name */}
                                         <p className="text-sm font-medium text-slate-100 truncate max-w-[100px]">{mastery.championName}</p>

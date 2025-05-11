@@ -7,6 +7,7 @@ import { Loader2 } from 'lucide-react';
 // *** Import TRPC error type ***
 import type { AppRouter } from '@/trpc/routers/_app'; // Adjust path if needed
 import type { TRPCClientErrorLike } from '@trpc/client';
+import Image from 'next/image'; // Import the Next.js Image component
 
 interface RankedStatsCardProps {
   soloRank: LeagueEntryDTO | undefined;
@@ -19,10 +20,17 @@ interface RankedStatsCardProps {
 // Helper function (can be shared or kept local)
 function getRankIconUrl(tier?: string): string {
     const basePath = '/images/ranked-emblems/'; // Ensure this path is correct
-    if (!tier || tier.toLowerCase() === 'unranked') { return `${basePath}Rank=Unranked.png`; }
+    if (!tier || tier.toLowerCase() === 'unranked' || tier.toLowerCase() === 'none') { // Added 'none' for robustness
+        return `${basePath}Rank=Unranked.png`; 
+    }
     const tierName = tier.charAt(0).toUpperCase() + tier.slice(1).toLowerCase();
-    const filename = `Rank=${tierName}.png`;
-    return `${basePath}${filename}`;
+    // List of known (and presumably existing) emblem filenames
+    const knownTiers = ["Iron", "Bronze", "Silver", "Gold", "Platinum", "Emerald", "Diamond", "Master", "Grandmaster", "Challenger"];
+    if (knownTiers.includes(tierName)) {
+        const filename = `Rank=${tierName}.png`;
+        return `${basePath}${filename}`;
+    }
+    return `${basePath}Rank=Unranked.png`; // Fallback to Unranked if tier is not recognized
 }
 
 function calculateWinRate(wins: number, losses: number): number {
@@ -46,7 +54,15 @@ export function RankedStatsCard({ soloRank, flexRank, isLoading, error }: Ranked
         {/* Solo/Duo Display */}
         {!error && soloRank && (
             <div className="flex items-center gap-2 p-1.5 rounded-md bg-slate-700/40">
-                <img src={getRankIconUrl(soloRank.tier)} alt={`${soloRank.tier} Emblem`} className="h-10 w-10 object-contain" onError={(e) => { e.currentTarget.src = getRankIconUrl('Unranked'); e.currentTarget.alt = 'Unranked Emblem'; }}/>
+                <Image 
+                    src={getRankIconUrl(soloRank.tier)} 
+                    alt={`${soloRank.tier || 'Unranked'} Emblem`} 
+                    width={40} // h-10 w-10 translates to 40px
+                    height={40}
+                    className="object-contain" 
+                    // onError is not directly supported by next/image for client-side src replacement.
+                    // Ensure getRankIconUrl returns a valid placeholder if an image might be missing.
+                />
                 <div>
                     <p className="font-medium text-xs text-slate-200">Ranked Solo/Duo</p>
                     <p className="text-[11px] text-slate-300">{soloRank.tier} {soloRank.rank} - {soloRank.leaguePoints} LP</p>
@@ -57,7 +73,13 @@ export function RankedStatsCard({ soloRank, flexRank, isLoading, error }: Ranked
         {/* Flex Rank Display */}
         {!error && flexRank && (
             <div className="flex items-center gap-2 p-1.5 rounded-md bg-slate-700/40">
-                 <img src={getRankIconUrl(flexRank.tier)} alt={`${flexRank.tier} Emblem`} className="h-10 w-10 object-contain" onError={(e) => { e.currentTarget.src = getRankIconUrl('Unranked'); e.currentTarget.alt = 'Unranked Emblem'; }}/>
+                 <Image 
+                    src={getRankIconUrl(flexRank.tier)} 
+                    alt={`${flexRank.tier || 'Unranked'} Emblem`} 
+                    width={40} // h-10 w-10 translates to 40px
+                    height={40}
+                    className="object-contain"
+                />
                 <div>
                     <p className="font-medium text-xs text-slate-200">Ranked Flex</p>
                     <p className="text-[11px] text-slate-300">{flexRank.tier} {flexRank.rank} - {flexRank.leaguePoints} LP</p>

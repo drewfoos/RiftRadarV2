@@ -90,17 +90,6 @@ interface TeamDto {
   objectives: ObjectivesDto;
 }
 
-interface MatchDetailsData {
-  metadata: { matchId: string; participants: string[]; dataVersion: string; };
-  info: {
-    gameCreation: number; gameDuration: number; gameEndTimestamp?: number; gameId: number;
-    gameMode: string; gameName: string; gameType: string; gameVersion: string;
-    mapId: number; participants: MatchParticipantStats[]; platformId: string;
-    queueId: number; teams: TeamDto[]; tournamentCode?: string;
-  };
-  fetchedFrom?: string;
-}
-
 // Data Dragon Types (to be passed as props)
 interface DDragonSummonerSpell { id: string; name: string; description: string; key: string; image: { full: string; }; } // 'key' is numeric ID as string
 interface DDragonRune { id: number; key: string; icon: string; name: string; shortDesc?: string; longDesc?: string; } // Individual rune
