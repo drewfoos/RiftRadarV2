@@ -4,13 +4,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useTRPC } from '@/trpc/client';
 import type { AppRouter } from '@/trpc/routers/_app';
 import type { DDragonChampion, DDragonDataBundle, DDragonRune, DDragonRuneTree, LeagueEntryDTO } from '@/types/ddragon';
-import type { CurrentGameInfo, BannedChampion as SpectatorBannedChampion, Perks as SpectatorPerks } from '@/types/spectatorV5';
+import type { CurrentGameInfo, BannedChampion as SpectatorBannedChampion, Perks as SpectatorPerks, Participant as SpectatorParticipant } from '@/types/spectatorV5';
 import { useQuery } from '@tanstack/react-query';
 import type { TRPCClientErrorLike } from '@trpc/client';
-import { AlertTriangle, Ban, GripVertical, Loader2, MonitorOff, ShieldX } from 'lucide-react';
+import { AlertTriangle, Ban, GripVertical, Loader2, MonitorOff, ShieldX, Users } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 // Dnd-kit imports
 import {
@@ -31,6 +31,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
+const COMPONENT_NAME = "LiveGameCard";
 
 interface LiveGameCardProps {
   liveGameData: CurrentGameInfo | null | undefined;
@@ -101,9 +102,9 @@ function findRuneById(runeTree: DDragonRuneTree | undefined, runeId: number): DD
     return undefined;
 }
 
-// --- Player Card Display Component (Modified for Drag & Drop) ---
+// --- Player Card Display Component ---
 interface PlayerCardDisplayProps {
-  participant: CurrentGameInfo['participants'][0]; 
+  participant: SpectatorParticipant; 
   championDetails?: DDragonChampion;
   keystoneRune?: DDragonRune;
   secondaryTree?: DDragonRuneTree; 
@@ -114,6 +115,7 @@ interface PlayerCardDisplayProps {
   platformId: string; 
   onRuneHoverEnter: (event: React.MouseEvent<HTMLDivElement>, perks: SpectatorPerks) => void;
   onRuneHoverLeave: () => void;
+  isArenaMode?: boolean; 
 }
 
 const SortablePlayerCard: React.FC<PlayerCardDisplayProps & { id: string }> = (props) => {
@@ -124,18 +126,18 @@ const SortablePlayerCard: React.FC<PlayerCardDisplayProps & { id: string }> = (p
     transform,
     transition,
     isDragging,
-  } = useSortable({id: props.id});
+  } = useSortable({id: props.id, disabled: props.isArenaMode }); 
 
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.8 : 1, 
     zIndex: isDragging ? 100 : undefined, 
-    touchAction: 'none', 
+    touchAction: props.isArenaMode ? 'auto' : 'none', 
   };
 
   return (
-    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
+    <div ref={setNodeRef} style={style} {...attributes} {...(props.isArenaMode ? {} : listeners)} >
       <PlayerCardDisplay {...props} />
     </div>
   );
@@ -154,78 +156,91 @@ const PlayerCardDisplay: React.FC<PlayerCardDisplayProps> = ({
   platformId, 
   onRuneHoverEnter,
   onRuneHoverLeave,
+  isArenaMode = false, 
 }) => {
   const fullRiotId = participant.riotId && participant.riotId.trim() !== '' ? participant.riotId : participant.summonerName || 'Player';
   const gameName = fullRiotId.includes('#') ? fullRiotId.split('#')[0] : fullRiotId;
   const tagLine = fullRiotId.includes('#') ? fullRiotId.split('#')[1] : '';
 
-  const teamColorClass = participant.teamId === 100 ? 'border-blue-500' : 'border-red-500';
+  const teamColorClass = isArenaMode 
+    ? 'border-purple-400' 
+    : (participant.teamId === 100 ? 'border-blue-500' : 'border-red-500');
+    
   const searchedPlayerHighlight = isSearchedPlayer ? 'ring-2 ring-purple-500 shadow-purple-500/50' : 'hover:ring-1 hover:ring-slate-500';
   const runeIconStyle = "rounded-full bg-black/50 p-0.5 border border-slate-600 shadow-md";
 
   const soloDuoRank = rankedEntries?.find(entry => entry.queueType === "RANKED_SOLO_5x5");
   const profileLink = `/profile/${platformId}/${gameName}-${tagLine}`;
 
+  const cardWidth = isArenaMode ? "w-full max-w-[160px] sm:max-w-[170px]" : "w-[180px] md:w-[200px]";
+  const imageSize = isArenaMode ? 56 : 72; 
+  const spellRuneSize = isArenaMode ? 22 : 28; 
+
   return (
     <div 
-      className={`player-card bg-slate-800/70 rounded-lg shadow-lg w-[180px] md:w-[200px] transition-all duration-200 ease-in-out ${searchedPlayerHighlight} flex flex-col cursor-grab active:cursor-grabbing`}
+      className={`player-card bg-slate-800/70 rounded-lg shadow-lg ${cardWidth} transition-all duration-200 ease-in-out ${searchedPlayerHighlight} flex flex-col ${!isArenaMode ? 'cursor-grab active:cursor-grabbing' : 'cursor-default'}`}
     >
-      <div 
-        className={`h-16 rounded-t-lg ${participant.teamId === 100 ? 'bg-blue-600/30' : 'bg-red-600/30'} flex items-center justify-center`}
-      >
-        <GripVertical size={20} className="text-slate-400/30" /> 
-      </div>
-      <div className="relative px-2 pb-3 -mt-12 flex flex-col items-center flex-grow"> 
-        <div className="flex justify-around items-end w-full mb-2">
+      {!isArenaMode && (
+        <div 
+          className={`h-16 rounded-t-lg ${participant.teamId === 100 ? 'bg-blue-600/30' : 'bg-red-600/30'} flex items-center justify-center`}
+        >
+          <GripVertical size={20} className="text-slate-400/30" /> 
+        </div>
+      )}
+      {isArenaMode && ( 
+         <div className={`h-6 rounded-t-lg bg-purple-600/40 flex items-center justify-center`}></div>
+      )}
+      <div className={`relative px-2 pb-2 ${isArenaMode ? '-mt-4' : '-mt-12'} flex flex-col items-center flex-grow`}> 
+        <div className="flex justify-around items-end w-full mb-1.5">
           {!participant.bot && (
-            <div className="flex flex-col gap-1 self-center">
+            <div className="flex flex-col gap-0.5 self-center">
               <Image 
                 src={getSummonerSpellIconUrl(participant.spell1Id, ddragonData.summonerSpellData, currentPatchVersion)} 
-                alt="Spell 1" width={28} height={28} className="rounded border-2 border-slate-900 shadow-md" 
-                onError={(e) => { (e.target as HTMLImageElement).src = "https://placehold.co/28x28/1f2937/374151?text=S1"; }}/>
+                alt="Spell 1" width={spellRuneSize} height={spellRuneSize} className="rounded border-2 border-slate-900 shadow-md" 
+                onError={(e) => { (e.target as HTMLImageElement).src = `https://placehold.co/${spellRuneSize}x${spellRuneSize}/1f2937/374151?text=S1`; }}/>
               <Image 
                 src={getSummonerSpellIconUrl(participant.spell2Id, ddragonData.summonerSpellData, currentPatchVersion)} 
-                alt="Spell 2" width={28} height={28} className="rounded border-2 border-slate-900 shadow-md"
-                onError={(e) => { (e.target as HTMLImageElement).src = "https://placehold.co/28x28/1f2937/374151?text=S2"; }}/>
+                alt="Spell 2" width={spellRuneSize} height={spellRuneSize} className="rounded border-2 border-slate-900 shadow-md"
+                onError={(e) => { (e.target as HTMLImageElement).src = `https://placehold.co/${spellRuneSize}x${spellRuneSize}/1f2937/374151?text=S2`; }}/>
             </div>
           )}
-          {participant.bot && <div className="w-[30px]"></div>} 
+          {participant.bot && <div className={`w-[${spellRuneSize + 2}px]`}></div>} 
           <div className="relative">
             <Image
               src={getChampionIconUrl(championDetails?.id, currentPatchVersion)}
               alt={championDetails?.name || 'Champion'}
-              width={72} 
-              height={72}
-              className={`rounded-full border-4 ${teamColorClass} shadow-xl bg-slate-900`} 
-              onError={(e) => { (e.target as HTMLImageElement).src = "https://placehold.co/72x72/1f2937/374151?text=C"; }}
+              width={imageSize} 
+              height={imageSize}
+              className={`rounded-full border-2 md:border-4 ${teamColorClass} shadow-xl bg-slate-900`} 
+              onError={(e) => { (e.target as HTMLImageElement).src = `https://placehold.co/${imageSize}x${imageSize}/1f2937/374151?text=C`; }}
             />
           </div>
           {!participant.bot && participant.perks && (
             <div 
-              className="flex flex-col items-center gap-1 self-center cursor-default" 
+              className="flex flex-col items-center gap-0.5 self-center cursor-default" 
               onMouseEnter={(e) => participant.perks && onRuneHoverEnter(e, participant.perks)}
               onMouseLeave={onRuneHoverLeave}
             >
-              {keystoneRune && ( <Image src={getDDragonAssetUrl(keystoneRune.icon)} alt={keystoneRune.name} width={28} height={28} className={runeIconStyle} title={keystoneRune.name} onError={(e) => { (e.target as HTMLImageElement).src = "https://placehold.co/28x28/1f2937/374151?text=K"; }} /> )}
-              {secondaryTree && ( <Image src={getDDragonAssetUrl(secondaryTree.icon)} alt={secondaryTree.name} width={28} height={28} className={runeIconStyle} title={secondaryTree.name} onError={(e) => { (e.target as HTMLImageElement).src = "https://placehold.co/28x28/1f2937/374151?text=S"; }} /> )}
+              {keystoneRune && ( <Image src={getDDragonAssetUrl(keystoneRune.icon)} alt={keystoneRune.name} width={spellRuneSize} height={spellRuneSize} className={runeIconStyle} title={keystoneRune.name} onError={(e) => { (e.target as HTMLImageElement).src = `https://placehold.co/${spellRuneSize}x${spellRuneSize}/1f2937/374151?text=K`; }} /> )}
+              {secondaryTree && ( <Image src={getDDragonAssetUrl(secondaryTree.icon)} alt={secondaryTree.name} width={spellRuneSize} height={spellRuneSize} className={runeIconStyle} title={secondaryTree.name} onError={(e) => { (e.target as HTMLImageElement).src = `https://placehold.co/${spellRuneSize}x${spellRuneSize}/1f2937/374151?text=S`; }} /> )}
             </div>
           )}
-           {participant.bot && <div className="w-[32px]"></div>}
+           {participant.bot && <div className={`w-[${spellRuneSize + 2}px]`}></div>}
         </div>
-        <div className="text-center w-full space-y-1 mt-1 flex-grow flex flex-col justify-between"> 
+        <div className="text-center w-full space-y-0.5 mt-1 flex-grow flex flex-col justify-between"> 
           <div> 
             <Link href={profileLink} className="hover:text-purple-400 hover:underline transition-colors">
-              <p className="text-sm font-semibold text-slate-100 truncate" title={fullRiotId}>
+              <p className="text-xs sm:text-sm font-semibold text-slate-100 truncate" title={fullRiotId}>
                 {gameName}
               </p>
             </Link>
-            <p className="text-xs text-slate-300">{championDetails?.name || 'Champion'}</p>
+            <p className="text-[10px] sm:text-xs text-slate-300">{championDetails?.name || 'Champion'}</p>
           </div>
           
-          <div className="mt-2 min-h-[70px] flex flex-col justify-center items-center"> 
+          <div className={`mt-1 ${isArenaMode ? 'min-h-[40px]' : 'min-h-[70px]'} flex flex-col justify-center items-center`}> 
             {rankedEntries === undefined && !soloDuoRank && ( 
                 <div className="flex justify-center items-center h-full">
-                    <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
+                    <Loader2 className="h-4 w-4 animate-spin text-slate-400" />
                 </div>
             )}
             {soloDuoRank && (
@@ -233,25 +248,25 @@ const PlayerCardDisplay: React.FC<PlayerCardDisplayProps> = ({
                 <Image 
                   src={getRankedEmblemUrl(soloDuoRank.tier)} 
                   alt={soloDuoRank.tier || "Rank Emblem"} 
-                  width={56} 
-                  height={56}
-                  className="mb-1" 
+                  width={isArenaMode ? 32 : 56} 
+                  height={isArenaMode ? 32 : 56}
+                  className="mb-0.5" 
                   onError={(e) => { (e.target as HTMLImageElement).src = getRankedEmblemUrl("Unranked"); }} 
                 />
-                <p className="text-sm text-slate-100 font-semibold"> 
+                <p className="text-[10px] sm:text-xs text-slate-100 font-semibold"> 
                   {`${soloDuoRank.tier.charAt(0)}${soloDuoRank.tier.slice(1).toLowerCase()} ${soloDuoRank.rank}`}
                 </p>
-                <p className="text-xs text-slate-300"> 
+                <p className="text-[9px] sm:text-[10px] text-slate-300"> 
                   {`${soloDuoRank.leaguePoints} LP`}
                 </p>
-                <p className="text-xs text-slate-400 mt-0.5"> 
+                {!isArenaMode && <p className="text-[9px] sm:text-[10px] text-slate-400 mt-0.5"> 
                   {`${soloDuoRank.wins}W ${soloDuoRank.losses}L (${Math.round((soloDuoRank.wins / (soloDuoRank.wins + soloDuoRank.losses || 1)) * 100)}%)`}
-                </p>
+                </p>}
               </div>
             )}
             {rankedEntries !== undefined && !soloDuoRank && ( 
               <div className="flex flex-col items-center justify-center h-full pt-1">
-                <p className="text-sm text-slate-400 italic">Unranked</p>
+                <p className="text-xs sm:text-sm text-slate-400 italic">Unranked</p>
               </div>
             )}
           </div>
@@ -261,7 +276,6 @@ const PlayerCardDisplay: React.FC<PlayerCardDisplayProps> = ({
   );
 };
 
-// --- Tooltip Component ---
 interface RuneTooltipProps {
   runes: ResolvedParticipantRunes | null;
   visible: boolean;
@@ -281,6 +295,10 @@ const RuneTooltipContent: React.FC<RuneTooltipProps> = ({ runes, visible, positi
   return ( <div className="absolute z-50 p-3 bg-slate-900/95 border border-slate-700 rounded-lg shadow-xl w-72 text-sm backdrop-blur-sm" style={{ top: position.top, left: position.left, transform: 'translateY(-100%) translateX(-50%)' }} > {runes.keystone && ( <div className="mb-2 pb-1.5 border-b border-slate-700"> <p className="text-xs font-semibold text-purple-400 mb-1">{runes.primaryTreeName || 'Keystone'}</p> {renderRune(runes.keystone, "Keystone", 0, perkIdsFromApi?.[0])} </div> )} <div className="mb-2 pb-1.5 border-b border-slate-700"> <p className="text-xs font-semibold text-sky-400 mb-1">Primary Path</p> {runes.primaryRunes.map((rune, index) => renderRune(rune, `Primary ${index + 1}`, index, perkIdsFromApi?.[index + 1]))} </div> <div className="pb-1.5">  <p className="text-xs font-semibold text-emerald-400 mb-1">{runes.secondaryTreeName || 'Secondary Path'}</p> {runes.secondaryRunes.map((rune, index) => renderRune(rune, `Secondary ${index + 1}`, index, perkIdsFromApi?.[index + 4]))} </div> </div> );
 };
 
+interface LiveArenaTeam {
+  subteamId: number;
+  members: SpectatorParticipant[];
+}
 
 export function LiveGameCard({
   liveGameData,
@@ -300,9 +318,29 @@ export function LiveGameCard({
   const [tooltipPosition, setTooltipPosition] = useState({ top: 0, left: 0 });
   const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  const [team1PlayerOrder, setTeam1PlayerOrder] = useState<CurrentGameInfo['participants'][0][]>([]);
-  const [team2PlayerOrder, setTeam2PlayerOrder] = useState<CurrentGameInfo['participants'][0][]>([]);
+  const [team1PlayerOrder, setTeam1PlayerOrder] = useState<SpectatorParticipant[]>([]);
+  const [team2PlayerOrder, setTeam2PlayerOrder] = useState<SpectatorParticipant[]>([]);
   const [summonerInputsForRankedQuery, setSummonerInputsForRankedQuery] = useState<Array<{summonerId: string; platformId: string}>>([]);
+
+  const isArenaMode = useMemo(() => liveGameData?.gameQueueConfigId === 1700 || liveGameData?.gameMode?.toUpperCase() === 'CHERRY', [liveGameData]);
+
+  const arenaTeamsArray: LiveArenaTeam[] = useMemo(() => {
+    if (!isArenaMode || !liveGameData?.participants) return [];
+    const groupedBySubteam: Record<number, SpectatorParticipant[]> = {};
+    liveGameData.participants.forEach(p => {
+        if (p.playerSubteamId) { 
+            if (!groupedBySubteam[p.playerSubteamId]) groupedBySubteam[p.playerSubteamId] = [];
+            groupedBySubteam[p.playerSubteamId].push(p);
+        }
+    });
+    return Object.entries(groupedBySubteam)
+        .map(([subteamId, members]) => ({
+            subteamId: parseInt(subteamId),
+            members: members.sort((a, b) => a.summonerName.localeCompare(b.summonerName)),
+        }))
+        .sort((a, b) => a.subteamId - b.subteamId);
+  }, [isArenaMode, liveGameData?.participants]);
+
 
   type BulkRankedData = Record<string, LeagueEntryDTO[] | null>;
 
@@ -323,26 +361,28 @@ export function LiveGameCard({
 
   useEffect(() => {
     if (liveGameData && liveGameData.participants) {
-      const newTeam1Participants = liveGameData.participants.filter(p => p.teamId === 100).slice(0,5);
-      const newTeam2Participants = liveGameData.participants.filter(p => p.teamId === 200).slice(0,5);
+      if (!isArenaMode) {
+        const newTeam1Participants = liveGameData.participants.filter(p => p.teamId === 100).slice(0,5);
+        const newTeam2Participants = liveGameData.participants.filter(p => p.teamId === 200).slice(0,5);
 
-      const newTeam1Puids = newTeam1Participants.map(p => p.puuid).sort().join(',');
-      setTeam1PlayerOrder(prevOrder => {
-        const currentTeam1Puids = prevOrder.map(p => p.puuid).sort().join(',');
-        if (prevOrder.length !== newTeam1Participants.length || newTeam1Puids !== currentTeam1Puids) {
-          return newTeam1Participants;
-        }
-        return prevOrder;
-      });
+        const newTeam1Puids = newTeam1Participants.map(p => p.puuid).sort().join(',');
+        setTeam1PlayerOrder(prevOrder => {
+          const currentTeam1Puids = prevOrder.map(p => p.puuid).sort().join(',');
+          if (prevOrder.length !== newTeam1Participants.length || newTeam1Puids !== currentTeam1Puids) {
+            return newTeam1Participants;
+          }
+          return prevOrder;
+        });
 
-      const newTeam2Puids = newTeam2Participants.map(p => p.puuid).sort().join(',');
-      setTeam2PlayerOrder(prevOrder => {
-        const currentTeam2Puids = prevOrder.map(p => p.puuid).sort().join(',');
-        if (prevOrder.length !== newTeam2Participants.length || newTeam2Puids !== currentTeam2Puids) {
-          return newTeam2Participants;
-        }
-        return prevOrder;
-      });
+        const newTeam2Puids = newTeam2Participants.map(p => p.puuid).sort().join(',');
+        setTeam2PlayerOrder(prevOrder => {
+          const currentTeam2Puids = prevOrder.map(p => p.puuid).sort().join(',');
+          if (prevOrder.length !== newTeam2Participants.length || newTeam2Puids !== currentTeam2Puids) {
+            return newTeam2Participants;
+          }
+          return prevOrder;
+        });
+      }
       
       const newSummonerInputsForRanked = liveGameData.participants
         .filter(p => !p.bot && p.summonerId) 
@@ -363,9 +403,7 @@ export function LiveGameCard({
       setTeam2PlayerOrder([]);
       setSummonerInputsForRankedQuery([]); 
     }
-  // The eslint-disable directive below is removed as it's no longer needed
-  // because the dependencies are correctly handled by the functional updates.
-  }, [liveGameData]); 
+  }, [liveGameData, isArenaMode]); 
 
 
   useEffect(() => {
@@ -415,7 +453,7 @@ export function LiveGameCard({
 
   function handleDragEnd(event: DragEndEvent) {
     const {active, over} = event;
-    if (!over || active.id === over.id) return;
+    if (isArenaMode || !over || active.id === over.id) return;
 
     const activeId = String(active.id);
     const overId = String(over.id);
@@ -471,11 +509,10 @@ export function LiveGameCard({
     </div>
   );
   
-  // Removed unused '_teamId' parameter from renderPlayerRow
-  const renderPlayerRow = (teamPlayerOrder: CurrentGameInfo['participants'][0][]) => ( 
-    <SortableContext items={teamPlayerOrder.map(p => p.puuid)} strategy={rectSortingStrategy}>
+  const renderPlayerRowFor5v5 = (players: SpectatorParticipant[]) => ( 
+    <SortableContext items={players.map(p => p.puuid)} strategy={rectSortingStrategy} disabled={false}>
       <div className="flex flex-wrap justify-center gap-3 md:gap-4">
-        {teamPlayerOrder.map(p => {
+        {players.map(p => {
           const championDetails = ddragonData.championData ? Object.values(ddragonData.championData).find(c => c.key === String(p.championId)) : undefined;
           const primaryRuneTree = p.perks ? findRuneTreeById(ddragonData.runeTreeData, p.perks.perkStyle) : undefined;
           const keystoneRune = p.perks && p.perks.perkIds && p.perks.perkIds.length > 0 ? findRuneById(primaryRuneTree, p.perks.perkIds[0]) : undefined;
@@ -497,6 +534,7 @@ export function LiveGameCard({
               platformId={liveGameData.platformId} 
               onRuneHoverEnter={handleRuneHoverEnter}
               onRuneHoverLeave={handleRuneHoverLeave}
+              isArenaMode={false}
             />
           );
         })}
@@ -504,8 +542,50 @@ export function LiveGameCard({
     </SortableContext>
   );
 
+  const renderArenaTeams = () => (
+    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4">
+      {arenaTeamsArray.map((team) => (
+        <div 
+          key={team.subteamId} 
+          className="bg-slate-800/40 p-3 rounded-lg shadow-md border border-purple-600/50 flex flex-col items-center"
+        >
+          <h3 className="text-sm font-semibold text-purple-300 mb-2 text-center flex items-center justify-center gap-1.5">
+            <Users size={16} className="opacity-70"/> Team {team.subteamId}
+          </h3>
+          <div className="flex flex-row justify-center gap-2 w-full"> 
+            {team.members.map(p => {
+               const championDetails = ddragonData.championData ? Object.values(ddragonData.championData).find(c => c.key === String(p.championId)) : undefined;
+               const primaryRuneTree = p.perks ? findRuneTreeById(ddragonData.runeTreeData, p.perks.perkStyle) : undefined;
+               const keystoneRune = p.perks && p.perks.perkIds && p.perks.perkIds.length > 0 ? findRuneById(primaryRuneTree, p.perks.perkIds[0]) : undefined;
+               const secondaryRuneTree = p.perks ? findRuneTreeById(ddragonData.runeTreeData, p.perks.perkSubStyle) : undefined; 
+               const rankedDataForPlayer = bulkRankedData ? bulkRankedData[p.summonerId] : undefined;
+              return (
+                <PlayerCardDisplay 
+                  key={p.puuid}
+                  participant={p}
+                  championDetails={championDetails}
+                  keystoneRune={keystoneRune}
+                  secondaryTree={secondaryRuneTree}
+                  rankedEntries={rankedDataForPlayer}
+                  currentPatchVersion={currentPatchVersion}
+                  ddragonData={ddragonData}
+                  isSearchedPlayer={p.puuid === searchedPlayerPuuid}
+                  platformId={liveGameData.platformId}
+                  onRuneHoverEnter={handleRuneHoverEnter}
+                  onRuneHoverLeave={handleRuneHoverLeave}
+                  isArenaMode={true}
+                />
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+
+
   return (
-    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd} > 
       <Card className="bg-slate-850 border border-slate-700 shadow-2xl w-full max-w-6xl mx-auto">
         <CardHeader className="pb-4 pt-5">
           <CardTitle className="text-2xl md:text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-500 to-orange-400 flex items-center justify-center">
@@ -518,15 +598,21 @@ export function LiveGameCard({
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6 px-2 py-4 md:px-4">
-          <div>
-            {renderTeamBans(team1Bans, 100)}
-            {renderPlayerRow(team1PlayerOrder)} 
-          </div>
-          <hr className="border-slate-700/50 my-4" />
-          <div>
-            {renderTeamBans(team2Bans, 200)}
-            {renderPlayerRow(team2PlayerOrder)} 
-          </div>
+          {isArenaMode ? (
+            renderArenaTeams()
+          ) : (
+            <>
+              <div>
+                {renderTeamBans(team1Bans, 100)}
+                {renderPlayerRowFor5v5(team1PlayerOrder)} 
+              </div>
+              <hr className="border-slate-700/50 my-4" />
+              <div>
+                {renderTeamBans(team2Bans, 200)}
+                {renderPlayerRowFor5v5(team2PlayerOrder)} 
+              </div>
+            </>
+          )}
         </CardContent>
       </Card>
       
