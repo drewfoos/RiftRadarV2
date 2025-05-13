@@ -5,9 +5,8 @@ import { notFound } from 'next/navigation';
 import { Suspense } from 'react';
 import { ErrorBoundary } from 'react-error-boundary';
 
-// Assuming ProfilePageErrorBoundaryFallback is generic enough, or create a new one
 import { ProfilePageErrorBoundaryFallback } from '../ErrorBoundaryFallback';
-import { LiveGamePageClient } from './LiveGamePageClient'; // New client component
+import { LiveGamePageClient } from './LiveGamePageClient'; 
 
 import type {
   DDragonArenaAugment,
@@ -17,10 +16,6 @@ import type {
 import { Loader2 } from 'lucide-react';
 
 export const dynamic = 'force-dynamic'; 
-
-// --- Data Dragon Fetching Logic (Copied from your main profile page.tsx) ---
-// It's highly recommended to refactor this into a shared utility function 
-// (e.g., in src/lib/ddragonUtils.ts) to avoid duplication.
 
 async function fetchDDragonJson(fileName: string, patchVersion: string, language: string = "en_US"): Promise<any> {
   const url = `https://ddragon.leagueoflegends.com/cdn/${patchVersion}/data/${language}/${fileName}.json`;
@@ -38,18 +33,23 @@ async function fetchDDragonJson(fileName: string, patchVersion: string, language
 }
 
 async function fetchCommunityDragonArenaAugments(patchVersionForCDragon: string): Promise<Record<number, DDragonArenaAugment> | null> {
-  const url = `https://raw.communitydragon.org/${patchVersionForCDragon}/cdragon/arena/en_us.json`;
-  console.log(`Fetching Arena Augments from Community Dragon: ${url}`);
+  let attemptUrl = `https://raw.communitydragon.org/${patchVersionForCDragon}/cdragon/arena/en_us.json`;
+  console.log(`[CDragon Augments] Attempting to fetch from: ${attemptUrl}`);
   try {
-    const response = await fetch(url, { next: { revalidate: 60 * 60 * 6 } }); 
+    let response = await fetch(attemptUrl, { next: { revalidate: 60 * 60 * 6 } }); 
+    
     if (!response.ok) {
-      console.error(`CDragon Augments Fetch Error (Patch: ${patchVersionForCDragon}, Status: ${response.status})`);
-      if (patchVersionForCDragon !== "latest") {
-        console.log("Attempting CDragon fetch with 'latest' patch for Arena Augments...");
-        return fetchCommunityDragonArenaAugments("latest");
+      console.warn(`[CDragon Augments] Fetch Error for patch "${patchVersionForCDragon}" (Status: ${response.status}). Trying "latest"...`);
+      // Fallback to 'latest' if specific patch fails
+      attemptUrl = `https://raw.communitydragon.org/latest/cdragon/arena/en_us.json`;
+      console.log(`[CDragon Augments] Attempting to fetch from: ${attemptUrl}`);
+      response = await fetch(attemptUrl, { next: { revalidate: 60 * 60 * 6 } });
+      if (!response.ok) {
+        console.error(`[CDragon Augments] Fetch Error for "latest" patch as well (Status: ${response.status}). No augment data loaded.`);
+        return null;
       }
-      return null;
     }
+
     const data = await response.json();
     if (data?.augments && typeof data.augments === 'object') {
       const processed: Record<number, DDragonArenaAugment> = {};
@@ -59,19 +59,26 @@ async function fetchCommunityDragonArenaAugments(patchVersionForCDragon: string)
           processed[aug.id] = aug;
         }
       }
+      console.log(`[CDragon Augments] Loaded ${Object.keys(processed).length} Arena Augments using patch segment from URL: ${attemptUrl.split('/')[3]}.`);
       return processed;
     }
-    console.error("CDragon Augments data not in expected format:", data);
+    console.error("[CDragon Augments] Data not in expected format:", data);
     return null;
   } catch (error) {
-    console.error(`CDragon Augments Network Error (Patch: ${patchVersionForCDragon})`, error);
+    console.error(`[CDragon Augments] Network Error while fetching from ${attemptUrl}`, error);
     return null;
   }
 }
 
 async function getAllDDragonData(): Promise<{ latestPatchVersion: string; ddragonData: DDragonDataBundle }> {
-  let latestPatchVersion = "14.10.1"; 
-  const ddragonData: DDragonDataBundle = { summonerSpellData: null, runeTreeData: null, championData: null, gameModeMap: null, arenaAugmentData: null };
+  let latestPatchVersion = "14.10.1"; // Sensible fallback patch
+  const ddragonData: DDragonDataBundle = { 
+    summonerSpellData: null, 
+    runeTreeData: null, 
+    championData: null, 
+    gameModeMap: null, 
+    arenaAugmentData: null 
+  };
 
   try {
     const versionsResponse = await fetch('https://ddragon.leagueoflegends.com/api/versions.json', { next: { revalidate: 60 * 30 } });
@@ -83,45 +90,68 @@ async function getAllDDragonData(): Promise<{ latestPatchVersion: string; ddrago
 
   console.log(`LiveGamePage Server: Using DDragon Patch for Riot Assets: ${latestPatchVersion}`);
 
-  let cdragonPatchForArena = "latest";
-  const patchParts = latestPatchVersion.split('.');
-  if (patchParts.length >= 2) { cdragonPatchForArena = `${patchParts[0]}.${patchParts[1]}`; }
-  else if (latestPatchVersion !== "latest") { console.warn(`DDragon patch format "${latestPatchVersion}" not ideal for CDragon, using "${cdragonPatchForArena}" for Arena Augments.`); }
+  // For Community Dragon, try 'latest' first, or major.minor.
+  // It's often more reliable to just use 'latest' for community dragon if specific patch mapping is problematic.
+  let cdragonPatchForArena = "latest"; 
+  // const patchParts = latestPatchVersion.split('.');
+  // if (patchParts.length >= 2) { cdragonPatchForArena = `${patchParts[0]}.${patchParts[1]}`; }
+  // else if (latestPatchVersion !== "latest") { console.warn(`DDragon patch format "${latestPatchVersion}" not ideal for CDragon, using "${cdragonPatchForArena}" for Arena Augments.`); }
+
 
   const [summonerJson, runesReforgedJson, championJson, queuesJson, processedArenaAugments] = await Promise.all([
     fetchDDragonJson('summoner', latestPatchVersion),
     fetchDDragonJson('runesReforged', latestPatchVersion),
     fetchDDragonJson('champion', latestPatchVersion),
     fetch('https://static.developer.riotgames.com/docs/lol/queues.json', { next: { revalidate: 60 * 60 * 24 * 7 } }).then(res => res.ok ? res.json() : null).catch(() => null),
-    fetchCommunityDragonArenaAugments(cdragonPatchForArena)
+    fetchCommunityDragonArenaAugments(cdragonPatchForArena) // Pass the determined cdragon patch
   ]);
 
   if (summonerJson?.data) ddragonData.summonerSpellData = summonerJson.data;
   if (runesReforgedJson && Array.isArray(runesReforgedJson)) ddragonData.runeTreeData = runesReforgedJson;
   if (championJson?.data) ddragonData.championData = championJson.data;
   if (queuesJson && Array.isArray(queuesJson)) {
+    const preferredGameModeNames: Record<number, string> = {
+        400: "Draft",
+        420: "Ranked Solo", 
+        430: "Normal Blind",
+        440: "Ranked Flex",
+        450: "ARAM",
+        700: "Clash",
+        1700: "Arena",
+        1900: "URF"
+    };
     ddragonData.gameModeMap = queuesJson.reduce((acc: Record<number, string>, queue: DDragonQueue) => {
-      acc[queue.queueId] = queue.description?.replace(/ Games$| 5v5$| Summoner's Rift$| Twisted Treeline$| Howling Abyss$/i, '') || queue.map;
+      if (preferredGameModeNames[queue.queueId]) {
+        acc[queue.queueId] = preferredGameModeNames[queue.queueId];
+      } else if (queue.description) {
+        acc[queue.queueId] = queue.description
+          .replace(/ Games$/i, '')
+          .replace(/ 5v5$/i, '')
+          .replace(/ Summoner's Rift$/i, '')
+          .replace(/ Twisted Treeline$/i, '')
+          .replace(/ Howling Abyss$/i, '')
+          .replace(/ Butcher's Bridge$/i, '') 
+          .trim(); 
+      } else {
+        acc[queue.queueId] = queue.map; 
+      }
       return acc;
     }, {});
   }
   ddragonData.arenaAugmentData = processedArenaAugments;
-  if (ddragonData.arenaAugmentData) { console.log(`Loaded ${Object.keys(ddragonData.arenaAugmentData).length} Arena Augments.`); }
-  else { console.warn("Arena Augment data was not loaded for LiveGamePage."); }
+  // Removed the console log for arena augments here, fetchCommunityDragonArenaAugments logs it.
 
   return { latestPatchVersion, ddragonData };
 }
-// --- End Data Dragon Fetching Logic ---
 
 interface LiveProfilePageProps {
-  params: Promise<{ // params is a Promise in Next.js 15 for generateMetadata and Server Components
+  params: Promise<{ 
     region: string;
     riotId: string; 
   }>;
 }
 
 export async function generateMetadata({ params: paramsPromise }: LiveProfilePageProps): Promise<Metadata> {
-  // Await the params Promise to resolve
   const params = await paramsPromise; 
   const { region: encodedRegion, riotId: encodedRiotId } = params;
   
@@ -137,7 +167,7 @@ export async function generateMetadata({ params: paramsPromise }: LiveProfilePag
       description: `View live game details for League of Legends player ${gameName}#${tagLine} on ${decodedRegion.toUpperCase()}.`
     };
   } catch (error) {
-    console.error("Error generating metadata for live game page:", error, params); // Log the resolved params here
+    console.error("Error generating metadata for live game page:", error, params); 
     return {
       title: "Live Game - RiftRadar",
       description: "View live League of Legends game details."
@@ -146,7 +176,6 @@ export async function generateMetadata({ params: paramsPromise }: LiveProfilePag
 }
 
 export default async function LiveGamePage({ params: paramsPromise }: LiveProfilePageProps) {
-  // Await the params Promise to resolve
   const params = await paramsPromise;
   const { region: encodedRegion, riotId: encodedRiotId } = params;
 
@@ -162,19 +191,17 @@ export default async function LiveGamePage({ params: paramsPromise }: LiveProfil
     region = decodeURIComponent(encodedRegion);
     riotId = decodeURIComponent(encodedRiotId);
   } catch (error) {
-    console.error("LiveGamePage: Error decoding URL parameters.", error, params); // Log resolved params
+    console.error("LiveGamePage: Error decoding URL parameters.", error, params); 
     notFound();
   }
 
   const riotIdParts = riotId.split('-');
-  if (riotIdParts.length < 2) {
-    console.error(`LiveGamePage: Invalid riotId format. Expected "gameName-tagLine", got: "${riotId}"`);
-    notFound();
-  }
-  const gameName = riotIdParts.slice(0, -1).join('-');
-  const tagLine = riotIdParts[riotIdParts.length - 1];
-  if (!gameName || !tagLine) {
-      console.error(`LiveGamePage: Could not parse gameName or tagLine from riotId: "${riotId}"`);
+  // Allow just gameName if no tagline is provided in URL, but tagLine will be empty string
+  const gameName = riotIdParts.length > 1 ? riotIdParts.slice(0, -1).join('-') : riotIdParts[0];
+  const tagLine = riotIdParts.length > 1 ? riotIdParts[riotIdParts.length - 1] : "";
+
+  if (!gameName ) { // TagLine can be empty, but gameName must exist
+      console.error(`LiveGamePage: Could not parse gameName from riotId: "${riotId}"`);
       notFound();
   }
 
