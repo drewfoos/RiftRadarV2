@@ -31,8 +31,6 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
-const COMPONENT_NAME = "LiveGameCard";
-
 interface LiveGameCardProps {
   liveGameData: CurrentGameInfo | null | undefined;
   isLoading: boolean;

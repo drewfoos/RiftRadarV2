@@ -92,7 +92,7 @@ async function getAllDDragonData(): Promise<{ latestPatchVersion: string; ddrago
 
   // For Community Dragon, try 'latest' first, or major.minor.
   // It's often more reliable to just use 'latest' for community dragon if specific patch mapping is problematic.
-  let cdragonPatchForArena = "latest"; 
+  const cdragonPatchForArena = "latest"; 
   // const patchParts = latestPatchVersion.split('.');
   // if (patchParts.length >= 2) { cdragonPatchForArena = `${patchParts[0]}.${patchParts[1]}`; }
   // else if (latestPatchVersion !== "latest") { console.warn(`DDragon patch format "${latestPatchVersion}" not ideal for CDragon, using "${cdragonPatchForArena}" for Arena Augments.`); }
