@@ -12,7 +12,7 @@ import type { AppRouter } from '@/trpc/routers/_app'; // Adjust path if needed
 import type { TRPCClientErrorLike } from '@trpc/client';
 // Import type for matchPages data structure
 import type { InfiniteData } from '@tanstack/react-query';
-import { useMemo, useEffect } from 'react'; // Import useMemo and useEffect
+import { useEffect, useMemo } from 'react'; // Import useMemo and useEffect
 
 // Re-define or import filter types/constants
 const QUEUE_FILTERS = {
@@ -54,7 +54,6 @@ interface MatchHistorySectionProps {
 }
 
 export function MatchHistorySection({
-    allMatchIds, // Destructure the prop, even if not directly used for mapping MatchDisplaySwitcher instances
     selectedQueueFilterKey,
     handleFilterSelect,
     refetchMatchIdsPages,

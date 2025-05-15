@@ -23,9 +23,11 @@ import type {
 function createClientSideError(matchId: string, message: string, code?: string): TRPCClientErrorLike<AppRouter> {
   const error = new Error(message) as TRPCClientError<AppRouter>;
   error.name = 'ClientSideError';
-  // @ts-ignore
+  // Using @ts-expect-error as per ESLint rule, assuming these properties are not standard on Error
+  // and we are intentionally shaping it like a TRPCClientError.
+  // @ts-expect-error Property 'data' does not exist on type 'Error'.
   error.data = { httpStatus: null, code: code || 'CLIENT_VALIDATION_ERROR', path: 'match.getMatchDetails' };
-  // @ts-ignore
+  // @ts-expect-error Property 'shape' does not exist on type 'Error'.
   error.shape = { message: error.message, code: -1, data: error.data }; // Simplified shape
   return error;
 }
@@ -55,32 +57,23 @@ export function MatchDisplaySwitcher({
   arenaAugmentData,
   onFetchError
 }: MatchDisplaySwitcherProps) {
+  // --- Call Hooks at the Top Level ---
+  const trpcClient = useTRPC(); // Hook called unconditionally
 
+  // Determine if inputs are valid for a query
   const isMatchIdValidForQuery = typeof matchId === 'string' && matchId.trim().length >= 5;
   const isPlatformIdValidForQuery = typeof platformId === 'string' && platformId.trim().length >= 2;
   const isQueryEnabled = isMatchIdValidForQuery && isPlatformIdValidForQuery;
 
-  if (!isMatchIdValidForQuery) {
-    console.warn(`[MatchDisplaySwitcher] Invalid matchId prop: '${matchId}'. Min length 5 required. Not fetching. Calling onFetchError.`);
-    onFetchError?.(matchId || "unknown_invalid_id", createClientSideError(matchId || "unknown_invalid_id", `Invalid matchId: '${matchId}'. Min length 5 required.`, 'INVALID_INPUT_MATCHID'));
-    return null;
-  }
-  if (!isPlatformIdValidForQuery) {
-    console.warn(`[MatchDisplaySwitcher] Invalid platformId prop: '${platformId}' for matchId '${matchId}'. Min length 2 required. Not fetching. Calling onFetchError.`);
-    onFetchError?.(matchId, createClientSideError(matchId, `Invalid platformId: '${platformId}'. Min length 2 required.`, 'INVALID_INPUT_PLATFORMID'));
-    return null;
-  }
-
-  const trpcClient = useTRPC();
-
   const matchDetailsQueryOptions = trpcClient.match.getMatchDetails.queryOptions(
+    // Pass valid or potentially invalid inputs; `enabled` flag controls the fetch
     { matchId, platformId },
     {
       staleTime: 15 * 60 * 1000,
       gcTime: 60 * 60 * 1000,
-      enabled: isQueryEnabled,
+      enabled: isQueryEnabled, // Query will only run if inputs are valid
       refetchOnWindowFocus: false,
-      retry: 1, // Consider setting retry to 0 if API errors are common and you want to fail faster for the UI
+      retry: 1,
     }
   );
 
@@ -89,12 +82,31 @@ export function MatchDisplaySwitcher({
     isLoading,
     error,
     isFetching,
-  } = useQuery(matchDetailsQueryOptions);
+  } = useQuery(matchDetailsQueryOptions); // Hook called unconditionally
+
+  // --- Conditional Logic and Early Returns (after hooks) ---
+
+  // Handle cases where inputs are fundamentally invalid (even before query attempts)
+  if (!isMatchIdValidForQuery) {
+    console.warn(`[MatchDisplaySwitcher] Invalid matchId prop: '${matchId}'. Min length 5 required. Not fetching. Calling onFetchError.`);
+    // Call onFetchError effectfully, but outside of render logic if possible, or ensure it's idempotent
+    // For simplicity here, directly calling. Consider useEffect for side effects if this causes issues.
+    onFetchError?.(matchId || "unknown_invalid_id", createClientSideError(matchId || "unknown_invalid_id", `Invalid matchId: '${matchId}'. Min length 5 required.`, 'INVALID_INPUT_MATCHID'));
+    return null;
+  }
+  if (!isPlatformIdValidForQuery) {
+    // This implies matchId was okay, but platformId is not.
+    console.warn(`[MatchDisplaySwitcher] Invalid platformId prop: '${platformId}' for matchId '${matchId}'. Min length 2 required. Not fetching. Calling onFetchError.`);
+    onFetchError?.(matchId, createClientSideError(matchId, `Invalid platformId: '${platformId}'. Min length 2 required.`, 'INVALID_INPUT_PLATFORMID'));
+    return null;
+  }
+  // At this point, inputs were valid enough for the query to be potentially enabled.
 
   const typedError = error as TRPCClientErrorLike<AppRouter> | null;
 
   // --- Loading State ---
-  if (isLoading || (isFetching && !matchDetails && !typedError)) {
+  // Show loading skeleton if the query is enabled and actively loading/fetching.
+  if (isQueryEnabled && (isLoading || (isFetching && !matchDetails && !typedError))) {
     return (
       <Card className="mb-3 animate-pulse bg-slate-800/50 p-3 rounded-lg shadow-md h-[76px]">
         <div className="h-5 bg-slate-700 rounded w-3/4 mb-2"></div>
@@ -103,10 +115,9 @@ export function MatchDisplaySwitcher({
     );
   }
 
-  // --- Error State (from API fetch) ---
+  // --- Error State (from API fetch, query must have been enabled and ran) ---
   if (typedError) {
-    // **** CRITICAL LOGGING ****
-    console.log(`[MatchDisplaySwitcher] API Error for matchId '${matchId}'. Error object:`, JSON.parse(JSON.stringify(typedError))); // Log the error structure
+    console.log(`[MatchDisplaySwitcher] API Error for matchId '${matchId}'. Error object:`, JSON.parse(JSON.stringify(typedError)));
     if (onFetchError) {
         console.log(`[MatchDisplaySwitcher] Calling onFetchError for matchId '${matchId}' due to API error.`);
         onFetchError(matchId, typedError);
@@ -116,8 +127,8 @@ export function MatchDisplaySwitcher({
     return null;
   }
 
-  // --- Data Unavailable State (after successful fetch, but no data returned) ---
-  if (!isLoading && !typedError && !matchDetails) {
+  // --- Data Unavailable State (after successful fetch, but no data returned, query must have been enabled) ---
+  if (isQueryEnabled && !isLoading && !typedError && !matchDetails) {
      console.warn(`[MatchDisplaySwitcher] No details found for matchId '${matchId}' after successful fetch (API returned no data). Calling onFetchError.`);
     onFetchError?.(matchId, createClientSideError(matchId, `No details found for matchId ${matchId} after fetch.`, 'NO_DATA_RETURNED'));
     return null;
@@ -155,15 +166,24 @@ export function MatchDisplaySwitcher({
     }
   }
 
-  // Fallback: Data is truthy but info field is missing
-  if (matchDetails && !matchDetails.info) {
+  // Fallback: Data is truthy but info field is missing (query must have been enabled)
+  if (isQueryEnabled && matchDetails && !matchDetails.info) {
     console.warn(`[MatchDisplaySwitcher] Fallback: Match data present for '${matchId}' but no 'info' field. Calling onFetchError.`);
     onFetchError?.(matchId, createClientSideError(matchId, `Match data for ${matchId} was incomplete (missing 'info').`, 'INCOMPLETE_DATA'));
     return null;
   }
   
-  // Final catch-all if somehow none of the above conditions were met
-  // (e.g. query was disabled and no early exit happened - though current logic should prevent this)
+  // Final catch-all: If the query was disabled from the start because inputs were invalid,
+  // and the early returns for invalid props were somehow bypassed (should not happen with current logic),
+  // or if some other unhandled state occurs.
+  if (!isQueryEnabled) {
+    // This case should ideally be caught by the initial prop validation returns.
+    // If it's reached, it means the query was never enabled, and no data/error would be present from it.
+    console.log(`[MatchDisplaySwitcher] Query was not enabled for matchId '${matchId}'. Returning null.`);
+    // Not calling onFetchError here as it should have been called by the earlier validation checks.
+    return null;
+  }
+  
   console.log(`[MatchDisplaySwitcher] Reached final null return for matchId '${matchId}'. This may indicate an unhandled case.`);
   return null;
 }

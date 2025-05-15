@@ -27,8 +27,6 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from '@/components/ui/button';
 import { Info, Loader2, RefreshCw, Search, ShieldAlert, UserX, AlertCircle } from 'lucide-react';
 
-const COMPONENT_NAME_PROFILE_CLIENT = "UserProfilePageClient";
-
 // --- Constants ---
 const DEFAULT_MATCH_COUNT_PER_PAGE = 10;
 const MAX_MATCHES_FOR_STATS = 20;
