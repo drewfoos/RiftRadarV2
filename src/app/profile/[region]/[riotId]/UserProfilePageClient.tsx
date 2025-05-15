@@ -4,7 +4,7 @@
 import { useTRPC } from '@/trpc/client';
 import { useInfiniteQuery, useQueries, useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react'; // Added useEffect for logging
+import { useEffect, useMemo, useState, useCallback } from 'react';
 
 import type { AppRouter } from '@/trpc/routers/_app';
 import type {
@@ -25,7 +25,7 @@ import { RankedStatsCard } from './RankedStatsCard';
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from '@/components/ui/button';
-import { Info, Loader2, RefreshCw, Search, ShieldAlert, UserX } from 'lucide-react';
+import { Info, Loader2, RefreshCw, Search, ShieldAlert, UserX, AlertCircle } from 'lucide-react';
 
 const COMPONENT_NAME_PROFILE_CLIENT = "UserProfilePageClient";
 
@@ -48,6 +48,11 @@ type MatchFilterType = typeof QUEUE_FILTERS[QueueFilterKey]['type'];
 export interface ChampionPerformanceStat { championId: number; championName: string; championNameId?: string; games: number; wins: number; losses: number; kills: number; deaths: number; assists: number; }
 export interface PlayedWithStat { puuid: string; gameName: string; tagLine: string; games: number; wins: number; profileIcon: number | null; }
 
+interface MatchDetailError {
+  matchId: string;
+  error: TRPCClientErrorLike<AppRouter>;
+}
+
 interface UserProfilePageClientProps {
  region: string;
  gameName: string;
@@ -64,13 +69,15 @@ export function UserProfilePageClient({
  initialDDragonData
 }: UserProfilePageClientProps) {
 
-  console.log(`[${COMPONENT_NAME_PROFILE_CLIENT}] Initializing with props:`, { region, gameName, tagLine, currentPatchVersion, ddragonDataLoaded: !!initialDDragonData });
+  // console.log(`[${COMPONENT_NAME_PROFILE_CLIENT}] Initializing with props:`, { region, gameName, tagLine, currentPatchVersion, ddragonDataLoaded: !!initialDDragonData });
 
   const trpcClient = useTRPC();
   const router = useRouter();
 
   const [selectedQueueFilterKey, setSelectedQueueFilterKey] = useState<QueueFilterKey>('ALL');
   const currentQueueFilter = QUEUE_FILTERS[selectedQueueFilterKey];
+
+  const [matchDetailFetchErrors, setMatchDetailFetchErrors] = useState<MatchDetailError[]>([]);
 
   // --- Data Fetching Hooks ---
   const profileQueryOptions = trpcClient.player.getProfileByRiotId.queryOptions(
@@ -85,14 +92,40 @@ export function UserProfilePageClient({
     refetch: refetchProfile,
   } = useQuery(profileQueryOptions);
 
+  // --- useEffect Hooks ---
   useEffect(() => {
     if (profile) {
-      console.debug(`[${COMPONENT_NAME_PROFILE_CLIENT}] Profile data loaded/updated:`, { puuid: profile.puuid, name: profile.name, summonerLevel: profile.summonerLevel });
+      // console.debug(`[${COMPONENT_NAME_PROFILE_CLIENT}] Profile data loaded/updated:`, { puuid: profile.puuid, name: profile.name, summonerLevel: profile.summonerLevel });
     }
     if (isProfileError) {
-      console.error(`[${COMPONENT_NAME_PROFILE_CLIENT}] Error fetching profile:`, profileError);
+      // console.error(`[${COMPONENT_NAME_PROFILE_CLIENT}] Error fetching profile:`, profileError);
     }
   }, [profile, isProfileError, profileError]);
+
+  // useEffect to reset match detail errors ONLY when the queue filter changes.
+  // Assuming gameName, tagLine, region define the "session" for this profile page.
+  // If the user navigates to a different profile, the component unmounts and state is naturally reset.
+  useEffect(() => {
+    // console.log(`[${COMPONENT_NAME_PROFILE_CLIENT}] Queue filter changed to: ${selectedQueueFilterKey}. Resetting match detail errors.`);
+    setMatchDetailFetchErrors([]);
+  }, [selectedQueueFilterKey]); // Only reset when the filter explicitly changes by user action.
+
+  // useEffect to log the state of matchDetailFetchErrors when it changes
+  useEffect(() => {
+    // console.log(`[${COMPONENT_NAME_PROFILE_CLIENT}] matchDetailFetchErrors state is now:`, matchDetailFetchErrors.length, matchDetailFetchErrors.map(e => e.matchId));
+  }, [matchDetailFetchErrors]);
+
+
+  const handleMatchDetailError = useCallback((matchId: string, error: TRPCClientErrorLike<AppRouter>) => {
+    // console.log(`[${COMPONENT_NAME_PROFILE_CLIENT}] handleMatchDetailError called for matchId: ${matchId}`);
+    setMatchDetailFetchErrors(prevErrors => {
+      if (!prevErrors.some(e => e.matchId === matchId)) {
+        return [...prevErrors, { matchId, error }];
+      }
+      return prevErrors;
+    });
+  }, []);
+
 
   const rankedQueryOptions = trpcClient.player.getRankedEntries.queryOptions(
     { summonerId: profile?.id ?? '', platformId: region },
@@ -124,49 +157,37 @@ export function UserProfilePageClient({
 
   const allMatchIds = useMemo(() => {
     const ids = matchPages?.pages.flatMap((page) => page.items) ?? [];
-    console.debug(`[${COMPONENT_NAME_PROFILE_CLIENT}.allMatchIds] Recalculated. Total match IDs: ${ids.length}`, ids.slice(0,5)); // Log first 5
-    return ids;
+    return ids.filter(id => typeof id === 'string' && id.trim() !== '');
   }, [matchPages]);
 
   const matchIdsForStats = useMemo(() => {
     const ids = allMatchIds.slice(0, MAX_MATCHES_FOR_STATS);
-    console.debug(`[${COMPONENT_NAME_PROFILE_CLIENT}.matchIdsForStats] Recalculated. Match IDs for stats: ${ids.length}`, ids);
     return ids;
   }, [allMatchIds]);
   
-  const matchDetailsQueries = useQueries({
+  const matchDetailsQueriesForStats = useQueries({
       queries: matchIdsForStats.map((matchId) =>
           trpcClient.match.getMatchDetails.queryOptions(
               { matchId, platformId: region },
-              { staleTime: Infinity, gcTime: 24 * 60 * 60 * 1000, enabled: !!matchId && !!profile?.puuid, retry: 1 } // Ensure profile.puuid is available
+              { staleTime: Infinity, gcTime: 24 * 60 * 60 * 1000, enabled: !!matchId && !!profile?.puuid, retry: 1 }
           )
       ),
   });
 
-  const isLoadingMatchDetails = useMemo(() => {
-    const loading = matchDetailsQueries.some(q => q.isLoading);
-    // console.debug(`[${COMPONENT_NAME_PROFILE_CLIENT}.isLoadingMatchDetails] Is loading: ${loading}`);
-    return loading;
-  }, [matchDetailsQueries]);
+  const isLoadingMatchDetailsForStats = useMemo(() => {
+    return matchDetailsQueriesForStats.some(q => q.isLoading);
+  }, [matchDetailsQueriesForStats]);
 
-  const loadedMatchDetails = useMemo(() => {
-    const details = matchDetailsQueries.filter(q => q.isSuccess && q.data).map(q => q.data as MatchDetailsData);
-    console.debug(`[${COMPONENT_NAME_PROFILE_CLIENT}.loadedMatchDetails] Recalculated. Loaded match details count: ${details.length}`);
-    // For deeper debugging, you could log the participants of the first loaded match:
-    // if (details.length > 0 && details[0]?.info?.participants) {
-    //   console.debug(`[${COMPONENT_NAME_PROFILE_CLIENT}] Participants of first loaded match:`, details[0].info.participants.map(p => ({ puuid: p.puuid, summonerName: p.summonerName })));
-    // }
+  const loadedMatchDetailsForStats = useMemo(() => {
+    const details = matchDetailsQueriesForStats.filter(q => q.isSuccess && q.data).map(q => q.data as MatchDetailsData);
     return details;
-  }, [matchDetailsQueries]);
+  }, [matchDetailsQueriesForStats]);
 
-
-  // --- Derived Data & Stats Calculations ---
   const soloRank = useMemo(() => rankedEntries?.find((entry: LeagueEntryDTO) => entry.queueType === 'RANKED_SOLO_5x5'), [rankedEntries]);
   const flexRank = useMemo(() => rankedEntries?.find((entry: LeagueEntryDTO) => entry.queueType === 'RANKED_FLEX_SR'), [rankedEntries]);
   
   const topMasteryChampions = useMemo(() => {
       if (!championMastery || !initialDDragonData.championData) {
-        // console.debug(`[${COMPONENT_NAME_PROFILE_CLIENT}.topMasteryChampions] Missing championMastery or championData.`);
         return [];
       }
       const processed = [...championMastery]
@@ -181,20 +202,16 @@ export function UserProfilePageClient({
                   championNameId: championDetails?.id,
               };
           });
-      // console.debug(`[${COMPONENT_NAME_PROFILE_CLIENT}.topMasteryChampions] Processed top mastery champions:`, processed.map(p => p.championName));
       return processed;
   }, [championMastery, initialDDragonData.championData]);
 
   const championStats = useMemo((): ChampionPerformanceStat[] => {
-    if (!profile?.puuid || loadedMatchDetails.length === 0 || !initialDDragonData.championData) {
-        // console.debug(`[${COMPONENT_NAME_PROFILE_CLIENT}.championStats] Missing data for calculation (profile.puuid: ${!!profile?.puuid}, loadedMatchDetails: ${loadedMatchDetails.length}, championData: ${!!initialDDragonData.championData})`);
+    if (!profile?.puuid || loadedMatchDetailsForStats.length === 0 || !initialDDragonData.championData) {
         return [];
     }
     const stats: Record<number, ChampionPerformanceStat> = {};
-    for (const match of loadedMatchDetails) {
-      // Ensure match.info and match.info.participants exist
+    for (const match of loadedMatchDetailsForStats) {
       if (!match?.info?.participants) {
-        console.warn(`[${COMPONENT_NAME_PROFILE_CLIENT}.championStats] Skipping match due to missing info or participants: ${match?.metadata?.matchId}`);
         continue;
       }
       const playerPerf = match.info.participants.find(p => p.puuid === profile.puuid);
@@ -210,20 +227,16 @@ export function UserProfilePageClient({
       stats[champId].deaths += playerPerf.deaths;
       stats[champId].assists += playerPerf.assists;
     }
-    const calculatedStats = Object.values(stats).sort((a, b) => b.games - a.games).slice(0, 5);
-    // console.debug(`[${COMPONENT_NAME_PROFILE_CLIENT}.championStats] Calculated champion stats:`, calculatedStats.map(s => ({ name: s.championName, games: s.games })));
-    return calculatedStats;
-  }, [loadedMatchDetails, profile?.puuid, initialDDragonData.championData]);
+    return Object.values(stats).sort((a, b) => b.games - a.games).slice(0, 5);
+  }, [loadedMatchDetailsForStats, profile?.puuid, initialDDragonData.championData]);
 
   const playedWithStats = useMemo((): PlayedWithStat[] => {
-    if (!profile?.puuid || loadedMatchDetails.length === 0) {
-        // console.debug(`[${COMPONENT_NAME_PROFILE_CLIENT}.playedWithStats] Missing data for calculation (profile.puuid: ${!!profile?.puuid}, loadedMatchDetails: ${loadedMatchDetails.length})`);
+    if (!profile?.puuid || loadedMatchDetailsForStats.length === 0) {
         return [];
     }
     const teammates: Record<string, PlayedWithStat> = {};
-    for (const match of loadedMatchDetails) {
+    for (const match of loadedMatchDetailsForStats) {
       if (!match?.info?.participants) {
-        console.warn(`[${COMPONENT_NAME_PROFILE_CLIENT}.playedWithStats] Skipping match due to missing info or participants: ${match?.metadata?.matchId}`);
         continue;
       }
       const playerPerf = match.info.participants.find(p => p.puuid === profile.puuid);
@@ -252,13 +265,11 @@ export function UserProfilePageClient({
         }
       }
     }
-    const calculatedStats = Object.values(teammates)
+    return Object.values(teammates)
       .filter(t => t.games >= 2)
       .sort((a, b) => b.games - a.games)
       .slice(0, 5);
-    // console.debug(`[${COMPONENT_NAME_PROFILE_CLIENT}.playedWithStats] Calculated playedWith stats:`, calculatedStats.map(s => ({ name: s.gameName, games: s.games })));
-    return calculatedStats;
-  }, [loadedMatchDetails, profile?.puuid]);
+  }, [loadedMatchDetailsForStats, profile?.puuid]);
 
   const typedProfileError = profileError as TRPCClientErrorLike<AppRouter> | null;
   const typedRankedError = rankedError as TRPCClientErrorLike<AppRouter> | null;
@@ -266,20 +277,13 @@ export function UserProfilePageClient({
   const typedMatchIdsError = matchIdsError as TRPCClientErrorLike<AppRouter> | null;
 
   const handleFilterSelect = (newFilterKey: string) => {
-      console.log(`[${COMPONENT_NAME_PROFILE_CLIENT}] Filter selected: ${newFilterKey}`);
       if (newFilterKey in QUEUE_FILTERS) {
           setSelectedQueueFilterKey(newFilterKey as QueueFilterKey);
-          // Invalidate and refetch match IDs.
-          // Note: queryClient.invalidateQueries with queryKey from infiniteQueryOptions might need specific handling
-          // or ensure the key is stable and correctly targets the infinite query.
-          // For simplicity, refetchMatchIdsPages directly if available and reliable.
-          console.log(`[${COMPONENT_NAME_PROFILE_CLIENT}] Refetching match IDs for filter: ${newFilterKey}`);
           refetchMatchIdsPages(); 
       }
   };
 
   if (isLoadingProfile) {
-    console.log(`[${COMPONENT_NAME_PROFILE_CLIENT}] Rendering loading state for profile: ${gameName}#${tagLine}`);
     return (
       <div className="flex justify-center items-center min-h-[calc(100vh-10rem)]">
         <div className="flex flex-col items-center gap-4 p-8 rounded-lg bg-slate-800/50">
@@ -291,7 +295,6 @@ export function UserProfilePageClient({
   }
 
   if (isProfileError) {
-    console.error(`[${COMPONENT_NAME_PROFILE_CLIENT}] Profile error state for ${gameName}#${tagLine}:`, typedProfileError);
     if (typedProfileError?.data?.code === 'NOT_FOUND') {
       return (
         <div className="flex flex-col items-center justify-center min-h-[calc(100vh-10rem)] text-center p-4">
@@ -316,18 +319,16 @@ export function UserProfilePageClient({
   }
 
   if (!profile) {
-    console.warn(`[${COMPONENT_NAME_PROFILE_CLIENT}] Profile data is null/undefined after loading for ${gameName}#${tagLine}. This should ideally be caught by isProfileError or isLoadingProfile.`);
-     return (
+      return (
         <div className="flex flex-col items-center justify-center min-h-[calc(100vh-10rem)] text-center p-4">
             <Info className="h-16 w-16 text-gray-500 mb-4" />
             <h2 className="text-2xl font-semibold mb-2 text-gray-100">Profile Data Unavailable</h2>
-            <p className="text-gray-400 max-w-md mb-6"> Profile data for <span className="font-semibold text-white">{gameName}#{tagLine}</span> could not be loaded at this time, even though the player might exist. Please try again later or search again. </p>
+            <p className="text-gray-400 max-w-md mb-6"> Profile data for <span className="font-semibold text-white">{gameName}#{tagLine}</span> could not be loaded at this time. Please try again later. </p>
               <Button onClick={() => router.push('/')} variant="outline" className="dark:text-slate-200 dark:border-slate-600 dark:hover:bg-slate-700"> <Search className="mr-2 h-4 w-4" /> Search Again </Button>
         </div>
-     );
+      );
   }
 
-  console.debug(`[${COMPONENT_NAME_PROFILE_CLIENT}] Rendering main content for PUUID: ${profile.puuid}`);
   return (
     <div className="w-full">
         <ProfileHeader
@@ -336,10 +337,20 @@ export function UserProfilePageClient({
             tagLine={tagLine}
             region={region}
             currentPatchVersion={currentPatchVersion}
-            profileError={typedProfileError} // Should be null if we reached here and profile is valid
+            profileError={typedProfileError} 
         />
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            {matchDetailFetchErrors.length > 0 && (
+              <Alert variant="destructive" className="mb-6 text-sm">
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>Match Data Issues</AlertTitle>
+                <AlertDescription>
+                  Having trouble loading full details for {matchDetailFetchErrors.length === 1 ? "1 game" : `${matchDetailFetchErrors.length} games`}. Some information may be missing.
+                </AlertDescription>
+              </Alert>
+            )}
+
           <div className="flex flex-col lg:flex-row gap-6 lg:gap-8">
             <aside className="w-full lg:w-1/4 shrink-0 space-y-6">
               <RankedStatsCard
@@ -351,15 +362,15 @@ export function UserProfilePageClient({
               <div className="hidden lg:block">
                 <ChampionPerformanceCard
                     stats={championStats}
-                    isLoading={isLoadingMatchDetails}
-                    loadedMatchCount={loadedMatchDetails.length}
+                    isLoading={isLoadingMatchDetailsForStats}
+                    loadedMatchCount={loadedMatchDetailsForStats.length}
                     currentPatchVersion={currentPatchVersion}
                 />
               </div>
               <PlayedWithCard
                   stats={playedWithStats}
-                  isLoading={isLoadingMatchDetails}
-                  loadedMatchCount={loadedMatchDetails.length}
+                  isLoading={isLoadingMatchDetailsForStats}
+                  loadedMatchCount={loadedMatchDetailsForStats.length}
                   currentPatchVersion={currentPatchVersion}
                   region={region}
               />
@@ -386,9 +397,10 @@ export function UserProfilePageClient({
                   matchIdsError={typedMatchIdsError}
                   matchPages={matchPages}
                   region={region}
-                  searchedPlayerPuuid={profile.puuid} // Crucial: ensure this is correct
+                  searchedPlayerPuuid={profile.puuid}
                   currentPatchVersion={currentPatchVersion}
                   initialDDragonData={initialDDragonData}
+                  onMatchDetailError={handleMatchDetailError}
               />
             </div>
           </div>
